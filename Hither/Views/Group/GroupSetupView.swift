@@ -140,6 +140,14 @@ struct MainTabView: View {
                     Text("Direction")
                 }
             
+            CommandsView()
+                .environmentObject(authService)
+                .environmentObject(groupService)
+                .tabItem {
+                    Image(systemName: "megaphone")
+                    Text("Commands")
+                }
+            
             GroupDetailsView()
                 .tabItem {
                     Image(systemName: "person.2")
