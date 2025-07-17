@@ -150,12 +150,6 @@ struct MainTabView: View {
 }
 
 
-struct DirectionView: View {
-    var body: some View {
-        Text("Direction View - Coming Soon")
-            .navigationTitle("Direction")
-    }
-}
 
 struct GroupDetailsView: View {
     @EnvironmentObject private var groupService: GroupService
