@@ -140,6 +140,14 @@ struct MainTabView: View {
                     Text("Direction")
                 }
             
+            ItineraryView()
+                .environmentObject(authService)
+                .environmentObject(groupService)
+                .tabItem {
+                    Image(systemName: "list.bullet")
+                    Text("Itinerary")
+                }
+            
             CommandsView()
                 .environmentObject(authService)
                 .environmentObject(groupService)
