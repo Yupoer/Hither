@@ -10,14 +10,15 @@ import UserNotifications
 import UIKit
 
 @MainActor
-class NotificationService: ObservableObject {
+class NotificationService: NSObject, ObservableObject {
     @Published var authorizationStatus: UNAuthorizationStatus = .notDetermined
     @Published var isEnabled = false
     @Published var errorMessage: String?
     
     private let notificationCenter = UNUserNotificationCenter.current()
     
-    init() {
+    override init() {
+        super.init()
         checkAuthorizationStatus()
         notificationCenter.delegate = self
     }
