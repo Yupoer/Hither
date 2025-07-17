@@ -60,7 +60,7 @@ struct Waypoint: Identifiable, Codable {
     var name: String
     var description: String?
     let type: WaypointType
-    let location: GeoPoint
+    var location: GeoPoint
     let createdAt: Date
     var updatedAt: Date
     let createdBy: String
