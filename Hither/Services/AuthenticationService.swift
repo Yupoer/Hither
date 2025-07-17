@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import UIKit
 import FirebaseAuth
 import AuthenticationServices
 import GoogleSignIn
@@ -67,9 +68,37 @@ class AuthenticationService: ObservableObject {
         isLoading = true
         errorMessage = nil
         
-        // Note: Google Sign-In would require additional setup in a real implementation
-        // This is a placeholder for the Google Sign-In flow
-        errorMessage = "Google Sign-In not implemented yet"
+        guard let windowScene = await UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let presentingViewController = await windowScene.windows.first?.rootViewController else {
+            errorMessage = "Unable to get presenting view controller"
+            isLoading = false
+            return
+        }
+        
+        do {
+            guard let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presentingViewController) else {
+                errorMessage = "Google Sign-In was cancelled"
+                isLoading = false
+                return
+            }
+            
+            guard let idToken = result.user.idToken?.tokenString else {
+                errorMessage = "Failed to get Google ID token"
+                isLoading = false
+                return
+            }
+            
+            let accessToken = result.user.accessToken.tokenString
+            let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
+            
+            let authResult = try await Auth.auth().signIn(with: credential)
+            currentUser = HitherUser(from: authResult.user)
+            isAuthenticated = true
+            
+        } catch {
+            errorMessage = "Google Sign-In failed: \(error.localizedDescription)"
+        }
+        
         isLoading = false
     }
     
