@@ -72,10 +72,16 @@ struct MapView: View {
                     
                     Spacer()
                     
-                    if let group = groupService.currentGroup {
-                        GroupStatusCard(group: group, locationService: locationService)
-                            .padding()
+                    VStack(spacing: 12) {
+                        // Connection status
+                        ConnectionStatusView(locationService: locationService)
+                        
+                        // Group status card
+                        if let group = groupService.currentGroup {
+                            GroupStatusCard(group: group, locationService: locationService)
+                        }
                     }
+                    .padding()
                 }
             }
             .navigationTitle("Group Map")

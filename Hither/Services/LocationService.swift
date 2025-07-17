@@ -8,6 +8,7 @@
 import Foundation
 import CoreLocation
 import FirebaseFirestore
+import UIKit
 
 @MainActor
 class LocationService: NSObject, ObservableObject {
@@ -25,6 +26,11 @@ class LocationService: NSObject, ObservableObject {
     override init() {
         super.init()
         setupLocationManager()
+        setupBatteryMonitoring()
+    }
+    
+    private func setupBatteryMonitoring() {
+        UIDevice.current.isBatteryMonitoringEnabled = true
     }
     
     private func setupLocationManager() {
@@ -75,11 +81,67 @@ class LocationService: NSObject, ObservableObject {
     }
     
     private func startPeriodicLocationSync() {
-        locationUpdateTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+        // Adaptive update frequency based on movement and battery
+        let updateInterval = getOptimalUpdateInterval()
+        
+        locationUpdateTimer = Timer.scheduledTimer(withTimeInterval: updateInterval, repeats: true) { [weak self] _ in
             Task {
                 await self?.syncLocationToFirestore()
+                await self?.checkBatteryAndAdjustTracking()
             }
         }
+    }
+    
+    private func getOptimalUpdateInterval() -> TimeInterval {
+        // Battery optimization logic
+        let batteryLevel = UIDevice.current.batteryLevel
+        let batteryState = UIDevice.current.batteryState
+        
+        // Base intervals
+        var interval: TimeInterval = 30.0 // Default 30 seconds
+        
+        // Adjust based on battery level
+        if batteryLevel < 0.2 { // Less than 20%
+            interval = 120.0 // 2 minutes
+        } else if batteryLevel < 0.5 { // Less than 50%
+            interval = 60.0 // 1 minute
+        }
+        
+        // Reduce frequency if charging
+        if batteryState == .charging || batteryState == .full {
+            interval = min(interval, 15.0) // More frequent when charging
+        }
+        
+        // Reduce frequency if stationary (could be enhanced with motion detection)
+        if let lastLocation = currentLocation {
+            // Simple stationary detection - in real app would use more sophisticated logic
+            interval = max(interval, 45.0)
+        }
+        
+        return interval
+    }
+    
+    private func checkBatteryAndAdjustTracking() async {
+        let batteryLevel = UIDevice.current.batteryLevel
+        
+        // Send low battery alert if needed
+        if batteryLevel < 0.15 && batteryLevel > 0.10 { // Between 10-15%
+            await sendLowBatteryAlert()
+        }
+        
+        // Adjust tracking precision based on battery
+        if batteryLevel < 0.2 {
+            locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+            locationManager.distanceFilter = 50 // Update every 50 meters
+        } else {
+            locationManager.desiredAccuracy = kCLLocationAccuracyBest
+            locationManager.distanceFilter = 10 // Update every 10 meters
+        }
+    }
+    
+    private func sendLowBatteryAlert() async {
+        // This would integrate with NotificationService in a real implementation
+        print("Low battery alert: Location tracking may be affected")
     }
     
     private func stopPeriodicLocationSync() {
