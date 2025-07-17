@@ -13,6 +13,7 @@ struct GroupSetupView: View {
     @State private var groupName = ""
     @State private var inviteCode = ""
     @State private var showingJoinGroup = false
+    @State private var showingOnboarding = false
     
     var body: some View {
         NavigationView {
@@ -108,9 +109,17 @@ struct GroupSetupView: View {
             }
             .padding()
             .navigationTitle("Group Setup")
-            .navigationBarItems(trailing: Button("Sign Out") {
-                authService.signOut()
-            })
+            .navigationBarItems(
+                leading: Button("Help") {
+                    showingOnboarding = true
+                },
+                trailing: Button("Sign Out") {
+                    authService.signOut()
+                }
+            )
+            .sheet(isPresented: $showingOnboarding) {
+                OnboardingView(isPresented: $showingOnboarding)
+            }
         }
         .fullScreenCover(item: .constant(groupService.currentGroup)) { _ in
             MainTabView()
@@ -170,55 +179,37 @@ struct MainTabView: View {
 struct GroupDetailsView: View {
     @EnvironmentObject private var groupService: GroupService
     @EnvironmentObject private var authService: AuthenticationService
+    @State private var showingInviteSheet = false
+    @State private var showingLeaveAlert = false
     
     var body: some View {
         NavigationView {
-            VStack {
-                if let group = groupService.currentGroup {
-                    VStack(alignment: .leading, spacing: 16) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Group: \(group.name)")
-                                .font(.title2)
-                                .fontWeight(.semibold)
-                            
-                            Text("Invite Code: \(group.inviteCode)")
-                                .font(.headline)
-                                .padding()
-                                .background(Color.gray.opacity(0.1))
-                                .cornerRadius(8)
+            ScrollView {
+                VStack(spacing: 20) {
+                    if let group = groupService.currentGroup,
+                       let user = authService.currentUser {
+                        
+                        // Group header
+                        GroupHeaderView(group: group, currentUser: user)
+                        
+                        // Invite section (Leader only)
+                        if group.leader?.userId == user.id {
+                            leaderInviteSection(group: group)
                         }
                         
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Members (\(group.members.count))")
-                                .font(.headline)
-                            
-                            ForEach(group.members) { member in
-                                HStack {
-                                    Image(systemName: member.role == .leader ? "crown.fill" : "person.fill")
-                                        .foregroundColor(member.role == .leader ? .yellow : .blue)
-                                    
-                                    Text(member.displayName)
-                                    
-                                    Spacer()
-                                    
-                                    Text(member.role.rawValue.capitalized)
-                                        .font(.caption)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(member.role == .leader ? Color.yellow.opacity(0.2) : Color.blue.opacity(0.2))
-                                        .cornerRadius(4)
-                                }
-                                .padding(.vertical, 4)
-                            }
+                        // Members section
+                        membersSection(group: group, currentUser: user)
+                        
+                        // Quick actions
+                        if group.leader?.userId == user.id {
+                            leaderQuickActions()
                         }
                         
-                        Spacer()
+                        Spacer(minLength: 20)
                         
+                        // Leave group button
                         Button(action: {
-                            Task {
-                                guard let user = authService.currentUser else { return }
-                                await groupService.leaveGroup(userId: user.id)
-                            }
+                            showingLeaveAlert = true
                         }) {
                             Text("Leave Group")
                                 .frame(maxWidth: .infinity)
@@ -227,14 +218,240 @@ struct GroupDetailsView: View {
                                 .foregroundColor(.white)
                                 .cornerRadius(8)
                         }
+                    } else {
+                        Text("No group found")
+                            .foregroundColor(.secondary)
                     }
-                    .padding()
-                } else {
-                    Text("No group found")
-                        .foregroundColor(.secondary)
                 }
+                .padding()
             }
             .navigationTitle("Group")
+            .sheet(isPresented: $showingInviteSheet) {
+                if let group = groupService.currentGroup {
+                    InviteSheet(group: group, groupService: groupService)
+                }
+            }
+            .alert("Leave Group", isPresented: $showingLeaveAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Leave", role: .destructive) {
+                    Task {
+                        guard let user = authService.currentUser else { return }
+                        await groupService.leaveGroup(userId: user.id)
+                    }
+                }
+            } message: {
+                Text("Are you sure you want to leave this group? This action cannot be undone.")
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func leaderInviteSection(group: HitherGroup) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Invite Members")
+                .font(.headline)
+            
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Invite Code")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    
+                    Text(group.inviteCode)
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.blue)
+                }
+                
+                Spacer()
+                
+                Button("Share") {
+                    showingInviteSheet = true
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(Color.blue)
+                .foregroundColor(.white)
+                .cornerRadius(8)
+            }
+            .padding()
+            .background(Color.blue.opacity(0.1))
+            .cornerRadius(12)
+        }
+    }
+    
+    @ViewBuilder
+    private func membersSection(group: HitherGroup, currentUser: HitherUser) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Members (\(group.members.count))")
+                .font(.headline)
+            
+            LazyVStack(spacing: 8) {
+                ForEach(group.members) { member in
+                    MemberRowView(member: member, isCurrentUser: member.userId == currentUser.id)
+                }
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func leaderQuickActions() -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Quick Actions")
+                .font(.headline)
+            
+            HStack(spacing: 16) {
+                QuickActionButton(
+                    icon: "qrcode",
+                    title: "Share QR Code",
+                    color: .green
+                ) {
+                    showingInviteSheet = true
+                }
+                
+                QuickActionButton(
+                    icon: "arrow.clockwise",
+                    title: "New Invite Code",
+                    color: .orange
+                ) {
+                    Task {
+                        await groupService.generateNewInviteCode()
+                    }
+                }
+                
+                QuickActionButton(
+                    icon: "megaphone",
+                    title: "Broadcast",
+                    color: .purple
+                ) {
+                    // Switch to Commands tab
+                }
+                
+                Spacer()
+            }
+        }
+    }
+}
+
+struct MemberRowView: View {
+    let member: GroupMember
+    let isCurrentUser: Bool
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            RoleIndicatorView(role: member.role, size: 32)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(member.displayName)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    
+                    if isCurrentUser {
+                        Text("(You)")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                            .italic()
+                    }
+                }
+                
+                Text(member.role.rawValue.capitalized)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                if let lastUpdate = member.lastLocationUpdate {
+                    let timeAgo = Date().timeIntervalSince(lastUpdate)
+                    if timeAgo < 60 {
+                        StatusIndicatorView(isActive: true, title: "Location Live")
+                    } else if timeAgo < 300 {
+                        StatusIndicatorView(isActive: false, title: "Last seen \(Int(timeAgo/60))m ago")
+                    } else {
+                        StatusIndicatorView(isActive: false, title: "Location stale")
+                    }
+                }
+            }
+            
+            Spacer()
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(isCurrentUser ? Color.blue.opacity(0.05) : Color.clear)
+        .cornerRadius(8)
+    }
+}
+
+struct InviteSheet: View {
+    let group: HitherGroup
+    @ObservedObject var groupService: GroupService
+    @Environment(\.presentationMode) var presentationMode
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 24) {
+                VStack(spacing: 16) {
+                    Text("Invite to \(group.name)")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                    
+                    Text("Share this code with others to join your group")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                
+                VStack(spacing: 16) {
+                    Text(group.inviteCode)
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                        .foregroundColor(.blue)
+                        .padding()
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(12)
+                    
+                    // QR Code placeholder
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.gray.opacity(0.1))
+                        .frame(width: 200, height: 200)
+                        .overlay(
+                            VStack {
+                                Image(systemName: "qrcode")
+                                    .font(.system(size: 60))
+                                    .foregroundColor(.gray)
+                                Text("QR Code")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                            }
+                        )
+                }
+                
+                VStack(spacing: 12) {
+                    Button("Share Invite Code") {
+                        // Share functionality
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
+                    
+                    Button("Generate New Code") {
+                        Task {
+                            await groupService.generateNewInviteCode()
+                        }
+                    }
+                    .foregroundColor(.blue)
+                }
+                
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Invite Members")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarItems(
+                trailing: Button("Done") {
+                    presentationMode.wrappedValue.dismiss()
+                }
+            )
         }
     }
 }
