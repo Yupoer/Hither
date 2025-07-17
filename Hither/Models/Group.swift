@@ -13,7 +13,7 @@ enum MemberRole: String, Codable, CaseIterable {
     case follower = "follower"
 }
 
-struct GroupMember: Identifiable, Codable {
+struct GroupMember: Identifiable, Codable, Equatable {
     let id: String
     let userId: String
     let displayName: String
@@ -43,7 +43,7 @@ struct GroupMember: Identifiable, Codable {
     }
 }
 
-struct GeoPoint: Codable {
+struct GeoPoint: Codable, Equatable {
     let latitude: Double
     let longitude: Double
     
