@@ -62,7 +62,7 @@ struct GeoPoint: Codable {
     }
 }
 
-struct HitherGroup: Identifiable, Codable {
+struct HitherGroup: Identifiable, Codable, Equatable {
     let id: String
     let name: String
     let leaderId: String

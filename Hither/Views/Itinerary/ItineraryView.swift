@@ -193,7 +193,15 @@ struct ItineraryView: View {
                                         isLeader: isLeader,
                                         onTap: {
                                             selectedWaypoint = waypoint
-                                        }
+                                        },
+                                        onComplete: isLeader ? {
+                                            Task {
+                                                await itineraryService.completeWaypoint(
+                                                    groupId: group.id,
+                                                    waypointId: waypoint.id
+                                                )
+                                            }
+                                        } : nil
                                     )
                                 }
                             } header: {
