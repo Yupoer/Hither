@@ -76,11 +76,7 @@ class AuthenticationService: ObservableObject {
         }
         
         do {
-            guard let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presentingViewController) else {
-                errorMessage = "Google Sign-In was cancelled"
-                isLoading = false
-                return
-            }
+            let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presentingViewController)
             
             guard let idToken = result.user.idToken?.tokenString else {
                 errorMessage = "Failed to get Google ID token"
