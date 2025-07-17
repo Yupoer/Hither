@@ -31,6 +31,16 @@ struct GroupMember: Identifiable, Codable {
         self.location = nil
         self.lastLocationUpdate = nil
     }
+    
+    init(id: String, userId: String, displayName: String, role: MemberRole, joinedAt: Date, location: GeoPoint? = nil, lastLocationUpdate: Date? = nil) {
+        self.id = id
+        self.userId = userId
+        self.displayName = displayName
+        self.role = role
+        self.joinedAt = joinedAt
+        self.location = location
+        self.lastLocationUpdate = lastLocationUpdate
+    }
 }
 
 struct GeoPoint: Codable {

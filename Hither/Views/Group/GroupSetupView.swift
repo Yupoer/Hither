@@ -121,9 +121,14 @@ struct GroupSetupView: View {
 }
 
 struct MainTabView: View {
+    @EnvironmentObject private var authService: AuthenticationService
+    @EnvironmentObject private var groupService: GroupService
+    
     var body: some View {
         TabView {
             MapView()
+                .environmentObject(authService)
+                .environmentObject(groupService)
                 .tabItem {
                     Image(systemName: "map")
                     Text("Map")
@@ -144,13 +149,6 @@ struct MainTabView: View {
     }
 }
 
-// Placeholder views for now
-struct MapView: View {
-    var body: some View {
-        Text("Map View - Coming Soon")
-            .navigationTitle("Map")
-    }
-}
 
 struct DirectionView: View {
     var body: some View {

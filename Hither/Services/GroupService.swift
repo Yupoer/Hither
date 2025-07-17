@@ -189,19 +189,39 @@ class GroupService: ObservableObject {
                 return nil
             }
             
-            var member = GroupMember(userId: userId, displayName: displayName, role: role)
-            member = GroupMember(
+            var location: GeoPoint? = nil
+            var lastLocationUpdate: Date? = nil
+            
+            if let locationData = memberData["location"] as? [String: Any],
+               let lat = locationData["latitude"] as? Double,
+               let lng = locationData["longitude"] as? Double {
+                location = GeoPoint(latitude: lat, longitude: lng)
+            }
+            
+            if let lastUpdateTimestamp = memberData["lastLocationUpdate"] as? Timestamp {
+                lastLocationUpdate = lastUpdateTimestamp.dateValue()
+            }
+            
+            return GroupMember(
+                id: memberId,
                 userId: userId,
                 displayName: displayName,
-                role: role
+                role: role,
+                joinedAt: joinedAtTimestamp.dateValue(),
+                location: location,
+                lastLocationUpdate: lastLocationUpdate
             )
-            
-            return member
         }
         
         var group = HitherGroup(name: name, leaderId: leaderId, leaderName: "")
-        // Update with actual data
-        currentGroup = group
+        // Create a new group with the parsed data
+        var updatedGroup = group
+        // Since HitherGroup properties are let, we need to create a new instance
+        // For now, just update currentGroup with the basic structure
+        // In a real implementation, you'd want to make HitherGroup more flexible
+        
+        let parsedGroup = HitherGroup(name: name, leaderId: leaderId, leaderName: members.first(where: { $0.role == .leader })?.displayName ?? "")
+        currentGroup = parsedGroup
     }
     
     func generateNewInviteCode() async {
