@@ -54,7 +54,7 @@ enum WaypointType: String, CaseIterable, Codable {
     }
 }
 
-struct Waypoint: Identifiable, Codable {
+struct Waypoint: Identifiable, Codable, Equatable {
     let id: String
     let groupId: String
     var name: String
@@ -65,6 +65,8 @@ struct Waypoint: Identifiable, Codable {
     var updatedAt: Date
     let createdBy: String
     var isActive: Bool
+    var isCompleted: Bool
+    var isInProgress: Bool // "going" state
     var order: Int
     
     init(
@@ -86,7 +88,55 @@ struct Waypoint: Identifiable, Codable {
         self.updatedAt = Date()
         self.createdBy = createdBy
         self.isActive = true
+        self.isCompleted = false
+        self.isInProgress = false
         self.order = order
+    }
+    
+    // Initialize from Firestore data
+    init?(
+        id: String,
+        groupId: String,
+        name: String,
+        description: String?,
+        type: WaypointType,
+        location: GeoPoint,
+        createdAt: Date,
+        updatedAt: Date,
+        createdBy: String,
+        isActive: Bool,
+        isCompleted: Bool,
+        isInProgress: Bool,
+        order: Int
+    ) {
+        self.id = id
+        self.groupId = groupId
+        self.name = name
+        self.description = description
+        self.type = type
+        self.location = location
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.createdBy = createdBy
+        self.isActive = isActive
+        self.isCompleted = isCompleted
+        self.isInProgress = isInProgress
+        self.order = order
+    }
+    
+    // MARK: - Equatable
+    static func == (lhs: Waypoint, rhs: Waypoint) -> Bool {
+        return lhs.id == rhs.id &&
+               lhs.groupId == rhs.groupId &&
+               lhs.name == rhs.name &&
+               lhs.description == rhs.description &&
+               lhs.type == rhs.type &&
+               lhs.location == rhs.location &&
+               lhs.createdBy == rhs.createdBy &&
+               lhs.isActive == rhs.isActive &&
+               lhs.isCompleted == rhs.isCompleted &&
+               lhs.isInProgress == rhs.isInProgress &&
+               lhs.order == rhs.order
     }
 }
 
@@ -106,15 +156,19 @@ struct GroupItinerary: Identifiable, Codable {
     }
     
     var activeWaypoints: [Waypoint] {
-        waypoints.filter { $0.isActive }.sorted { $0.order < $1.order }
+        waypoints.filter { $0.isActive && !$0.isCompleted }.sorted { $0.order < $1.order }
     }
     
     var nextWaypoint: Waypoint? {
         activeWaypoints.first
     }
     
+    var currentWaypoint: Waypoint? {
+        waypoints.first { $0.isInProgress }
+    }
+    
     var completedWaypoints: [Waypoint] {
-        waypoints.filter { !$0.isActive }.sorted { $0.order < $1.order }
+        waypoints.filter { $0.isCompleted }.sorted { $0.order < $1.order }
     }
 }
 

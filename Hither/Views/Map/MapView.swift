@@ -13,32 +13,38 @@ struct MapView: View {
     @EnvironmentObject private var groupService: GroupService
     @EnvironmentObject private var authService: AuthenticationService
     @StateObject private var locationService = LocationService()
+    @StateObject private var itineraryService = ItineraryService()
     @State private var region = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
         span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
     )
     @State private var mapType: MKMapType = .standard
     @State private var isFollowingUser = true
+    @State private var routeOverlay: MKPolyline?
+    @State private var currentRoute: MKRoute?
     
     var body: some View {
         NavigationView {
             ZStack {
-                Map(coordinateRegion: $region, 
-                    interactionModes: .all,
-                    showsUserLocation: true,
-                    annotationItems: memberAnnotations) { annotation in
-                    MapAnnotation(coordinate: annotation.coordinate) {
-                        MemberAnnotationView(member: annotation.member)
-                    }
-                }
-                .mapStyle(mapStyle)
+                RouteMapView(
+                    region: $region,
+                    mapType: mapType,
+                    annotations: allAnnotations,
+                    currentRoute: currentRoute,
+                    userLocation: locationService.currentLocation
+                )
                 .onAppear {
                     setupLocationTracking()
+                    setupItineraryTracking()
                 }
                 .onChange(of: locationService.currentLocation) { location in
                     if let location = location, isFollowingUser {
                         updateRegionToCurrentLocation(location)
                     }
+                    updateRouteIfNeeded()
+                }
+                .onChange(of: itineraryService.currentItinerary?.currentWaypoint) { waypoint in
+                    updateRouteIfNeeded()
                 }
                 
                 VStack {
@@ -110,6 +116,32 @@ struct MapView: View {
         }
     }
     
+    private var allAnnotations: [MapViewAnnotationItem] {
+        var annotations: [MapViewAnnotationItem] = []
+        
+        // Add member annotations
+        for memberAnnotation in memberAnnotations {
+            annotations.append(MapViewAnnotationItem(
+                coordinate: memberAnnotation.coordinate,
+                member: memberAnnotation.member,
+                waypoint: nil,
+                isMember: true
+            ))
+        }
+        
+        // Add current waypoint annotation
+        if let currentWaypoint = itineraryService.currentItinerary?.currentWaypoint {
+            annotations.append(MapViewAnnotationItem(
+                coordinate: currentWaypoint.location.coordinate,
+                member: nil,
+                waypoint: currentWaypoint,
+                isMember: false
+            ))
+        }
+        
+        return annotations
+    }
+    
     private var mapStyle: MapStyle {
         switch mapType {
         case .standard:
@@ -145,6 +177,44 @@ struct MapView: View {
         }
     }
     
+    private func setupItineraryTracking() {
+        guard let group = groupService.currentGroup else { return }
+        itineraryService.startListeningToItinerary(groupId: group.id)
+    }
+    
+    private func updateRouteIfNeeded() {
+        guard let userLocation = locationService.currentLocation,
+              let currentWaypoint = itineraryService.currentItinerary?.currentWaypoint else {
+            currentRoute = nil
+            return
+        }
+        
+        Task {
+            await calculateRoute(
+                from: userLocation.coordinate,
+                to: currentWaypoint.location.coordinate
+            )
+        }
+    }
+    
+    private func calculateRoute(from startCoordinate: CLLocationCoordinate2D, to endCoordinate: CLLocationCoordinate2D) async {
+        let request = MKDirections.Request()
+        request.source = MKMapItem(placemark: MKPlacemark(coordinate: startCoordinate))
+        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: endCoordinate))
+        request.transportType = .walking
+        
+        let directions = MKDirections(request: request)
+        
+        do {
+            let response = try await directions.calculate()
+            await MainActor.run {
+                self.currentRoute = response.routes.first
+            }
+        } catch {
+            print("Error calculating route: \(error)")
+        }
+    }
+    
     private func cycleMapType() {
         switch mapType {
         case .standard:
@@ -163,6 +233,14 @@ struct MemberAnnotation: Identifiable {
     let id = UUID()
     let member: GroupMember
     let coordinate: CLLocationCoordinate2D
+}
+
+struct MapViewAnnotationItem: Identifiable {
+    let id = UUID()
+    let coordinate: CLLocationCoordinate2D
+    let member: GroupMember?
+    let waypoint: Waypoint?
+    let isMember: Bool
 }
 
 struct MemberAnnotationView: View {
@@ -185,6 +263,41 @@ struct MemberAnnotationView: View {
                 .padding(.horizontal, 4)
                 .padding(.vertical, 2)
                 .background(Color.white.opacity(0.8))
+                .cornerRadius(4)
+        }
+    }
+}
+
+struct WaypointAnnotationView: View {
+    let waypoint: Waypoint
+    
+    var body: some View {
+        VStack(spacing: 2) {
+            ZStack {
+                Circle()
+                    .fill(waypoint.isInProgress ? Color.green : Color.blue)
+                    .frame(width: 35, height: 35)
+                
+                Image(systemName: waypoint.type.icon)
+                    .foregroundColor(.white)
+                    .font(.system(size: 16, weight: .bold))
+                
+                if waypoint.isInProgress {
+                    Circle()
+                        .stroke(Color.green, lineWidth: 2)
+                        .frame(width: 45, height: 45)
+                        .opacity(0.6)
+                        .animation(.easeInOut(duration: 1).repeatForever(autoreverses: true), value: waypoint.isInProgress)
+                }
+            }
+            
+            Text(waypoint.name)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(waypoint.isInProgress ? Color.green.opacity(0.8) : Color.blue.opacity(0.8))
+                .foregroundColor(.white)
                 .cornerRadius(4)
         }
     }

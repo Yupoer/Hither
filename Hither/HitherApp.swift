@@ -19,13 +19,14 @@ struct HitherApp: App {
         FirebaseApp.configure()
         
         // Configure Google Sign-In
-        guard let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
-              let plist = NSDictionary(contentsOfFile: path),
-              let clientId = plist["CLIENT_ID"] as? String else {
-            fatalError("GoogleService-Info.plist not found or CLIENT_ID missing")
+        if let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
+           let plist = NSDictionary(contentsOfFile: path),
+           let clientId = plist["CLIENT_ID"] as? String,
+           !clientId.contains("your-actual-client-id") {
+            GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientId)
+        } else {
+            print("Warning: Google Sign-In not configured properly. CLIENT_ID missing or using placeholder value.")
         }
-        
-        GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientId)
     }
     
     var body: some Scene {

@@ -66,8 +66,16 @@ class LocationService: NSObject, ObservableObject {
         self.isTracking = true
         
         locationManager.startUpdatingLocation()
-        locationManager.allowsBackgroundLocationUpdates = authorizationStatus == .authorizedAlways
-        locationManager.pausesLocationUpdatesAutomatically = false
+        
+        // Only enable background location updates if we have proper authorization and capabilities
+        if authorizationStatus == .authorizedAlways {
+            // Background location updates require "location" background mode capability
+            // Only enable if the app is configured for background execution
+            if Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") != nil {
+                locationManager.allowsBackgroundLocationUpdates = true
+                locationManager.pausesLocationUpdatesAutomatically = false
+            }
+        }
         
         // Start periodic updates to Firestore
         startPeriodicLocationSync()
@@ -76,7 +84,12 @@ class LocationService: NSObject, ObservableObject {
     func stopTracking() {
         isTracking = false
         locationManager.stopUpdatingLocation()
-        locationManager.allowsBackgroundLocationUpdates = false
+        
+        // Only disable if it was enabled
+        if locationManager.allowsBackgroundLocationUpdates {
+            locationManager.allowsBackgroundLocationUpdates = false
+        }
+        
         stopPeriodicLocationSync()
     }
     
@@ -157,14 +170,18 @@ class LocationService: NSObject, ObservableObject {
         let geoPoint = GeoPoint(from: location.coordinate)
         
         do {
-            // Update member location in the group document
-            try await db.collection("groups").document(groupId).updateData([
-                "members.\(userId).location": [
-                    "latitude": geoPoint.latitude,
-                    "longitude": geoPoint.longitude
-                ],
-                "members.\(userId).lastLocationUpdate": Timestamp(date: Date())
-            ])
+            // Use setData with merge to create or update member location
+            try await db.collection("groups").document(groupId).setData([
+                "members": [
+                    userId: [
+                        "location": [
+                            "latitude": geoPoint.latitude,
+                            "longitude": geoPoint.longitude
+                        ],
+                        "lastLocationUpdate": Timestamp(date: Date())
+                    ]
+                ]
+            ], merge: true)
         } catch {
             errorMessage = "Failed to sync location: \(error.localizedDescription)"
         }
@@ -174,6 +191,14 @@ class LocationService: NSObject, ObservableObject {
         guard let currentLocation = currentLocation else { return nil }
         let targetLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
         return currentLocation.distance(from: targetLocation)
+    }
+    
+    static func formatDistance(_ distance: CLLocationDistance) -> String {
+        if distance < 1000 {
+            return String(format: "%.0f m", distance)
+        } else {
+            return String(format: "%.1f km", distance / 1000)
+        }
     }
     
     func calculateBearing(to coordinate: CLLocationCoordinate2D) -> Double? {

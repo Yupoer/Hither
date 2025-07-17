@@ -92,7 +92,7 @@ struct AddWaypointSheet: View {
                         Map(coordinateRegion: .constant(MKCoordinateRegion(
                             center: location,
                             span: MKCoordinateSpan(latitudeDelta: 0.005, longitudeDelta: 0.005)
-                        )), annotationItems: [MapAnnotationItem(coordinate: location)]) { item in
+                        )), annotationItems: [AddWaypointMapAnnotationItem(coordinate: location)]) { item in
                             MapAnnotation(coordinate: item.coordinate) {
                                 Image(systemName: selectedType.icon)
                                     .foregroundColor(getTypeColor(selectedType))
@@ -115,15 +115,13 @@ struct AddWaypointSheet: View {
                 }
                 .disabled(!canAddWaypoint)
             )
-            .onAppear {
-                setupLocation()
-            }
-            .sheet(isPresented: $showingLocationPicker) {
-                LocationPickerSheet(
-                    selectedLocation: $selectedLocation,
-                    region: $region
-                )
-            }
+        }
+        .navigationViewStyle(StackNavigationViewStyle())
+        .onAppear {
+            setupLocation()
+        }
+        .sheet(isPresented: $showingLocationPicker) {
+            LocationPickerSheet(selectedLocation: $selectedLocation, region: $region)
         }
     }
     
@@ -193,7 +191,7 @@ struct LocationPickerSheet: View {
     
     var body: some View {
         NavigationView {
-            Map(coordinateRegion: $region, annotationItems: tempLocation != nil ? [MapAnnotationItem(coordinate: tempLocation!)] : []) { item in
+            Map(coordinateRegion: $region, annotationItems: tempLocation != nil ? [AddWaypointMapAnnotationItem(coordinate: tempLocation!)] : []) { item in
                 MapAnnotation(coordinate: item.coordinate) {
                     Image(systemName: "mappin.circle.fill")
                         .foregroundColor(.red)
@@ -276,7 +274,7 @@ struct WaypointDetailSheet: View {
                         
                         Spacer()
                         
-                        if !waypoint.isActive {
+                        if waypoint.isCompleted {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundColor(.green)
                                 .font(.title)
@@ -298,7 +296,7 @@ struct WaypointDetailSheet: View {
                 Map(coordinateRegion: .constant(MKCoordinateRegion(
                     center: waypoint.location.coordinate,
                     span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-                )), annotationItems: [MapAnnotationItem(coordinate: waypoint.location.coordinate)]) { item in
+                )), annotationItems: [AddWaypointMapAnnotationItem(coordinate: waypoint.location.coordinate)]) { item in
                     MapAnnotation(coordinate: item.coordinate) {
                         Image(systemName: waypoint.type.icon)
                             .foregroundColor(getTypeColor())
@@ -311,19 +309,52 @@ struct WaypointDetailSheet: View {
                 // Actions
                 if isLeader {
                     VStack(spacing: 12) {
-                        if waypoint.isActive {
-                            Button(action: {
-                                markCompleted()
-                            }) {
-                                HStack {
-                                    Image(systemName: "checkmark.circle")
-                                    Text("Mark as Completed")
+                        if waypoint.isActive && !waypoint.isCompleted {
+                            if waypoint.isInProgress {
+                                // Stop Going button
+                                Button(action: {
+                                    stopGoing()
+                                }) {
+                                    HStack {
+                                        Image(systemName: "stop.circle")
+                                        Text("Stop Going")
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.orange)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(8)
                                 }
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.green)
-                                .foregroundColor(.white)
-                                .cornerRadius(8)
+                                
+                                // Mark Complete button
+                                Button(action: {
+                                    markCompleted()
+                                }) {
+                                    HStack {
+                                        Image(systemName: "checkmark.circle")
+                                        Text("Mark as Completed")
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.green)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(8)
+                                }
+                            } else {
+                                // Going button
+                                Button(action: {
+                                    startGoing()
+                                }) {
+                                    HStack {
+                                        Image(systemName: "arrow.right.circle")
+                                        Text("Going")
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.blue)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(8)
+                                }
                             }
                         }
                         
@@ -376,6 +407,34 @@ struct WaypointDetailSheet: View {
         }
     }
     
+    private func startGoing() {
+        Task {
+            await itineraryService.startWaypointProgress(
+                waypointId: waypoint.id,
+                groupId: groupId,
+                updatedBy: userId
+            )
+            
+            await MainActor.run {
+                presentationMode.wrappedValue.dismiss()
+            }
+        }
+    }
+    
+    private func stopGoing() {
+        Task {
+            await itineraryService.stopWaypointProgress(
+                waypointId: waypoint.id,
+                groupId: groupId,
+                updatedBy: userId
+            )
+            
+            await MainActor.run {
+                presentationMode.wrappedValue.dismiss()
+            }
+        }
+    }
+    
     private func markCompleted() {
         Task {
             await itineraryService.markWaypointCompleted(
@@ -398,6 +457,9 @@ struct WaypointDetailSheet: View {
                 updatedBy: userId
             )
             
+            // Wait a moment for Firestore to update
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+            
             await MainActor.run {
                 presentationMode.wrappedValue.dismiss()
             }
@@ -405,7 +467,7 @@ struct WaypointDetailSheet: View {
     }
 }
 
-struct MapAnnotationItem: Identifiable {
+struct AddWaypointMapAnnotationItem: Identifiable {
     let id = UUID()
     let coordinate: CLLocationCoordinate2D
 }

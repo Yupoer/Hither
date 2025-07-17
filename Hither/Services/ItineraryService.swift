@@ -97,6 +97,8 @@ class ItineraryService: ObservableObject {
                     "updatedAt": Timestamp(date: waypoint.updatedAt),
                     "createdBy": waypoint.createdBy,
                     "isActive": waypoint.isActive,
+                    "isCompleted": waypoint.isCompleted,
+                    "isInProgress": waypoint.isInProgress,
                     "order": waypoint.order
                 ])
             
@@ -172,6 +174,124 @@ class ItineraryService: ObservableObject {
         isLoading = false
     }
     
+    func startWaypointProgress(waypointId: String, groupId: String, updatedBy: String) async {
+        guard let itinerary = currentItinerary,
+              let waypoint = itinerary.waypoints.first(where: { $0.id == waypointId }) else {
+            errorMessage = "Waypoint not found"
+            return
+        }
+        
+        isLoading = true
+        errorMessage = nil
+        
+        do {
+            // Stop any other waypoint that might be in progress
+            for existingWaypoint in itinerary.waypoints where existingWaypoint.isInProgress {
+                try await db.collection("groups")
+                    .document(groupId)
+                    .collection("itinerary")
+                    .document("current")
+                    .collection("waypoints")
+                    .document(existingWaypoint.id)
+                    .updateData([
+                        "isInProgress": false,
+                        "updatedAt": Timestamp(date: Date())
+                    ])
+            }
+            
+            // Start this waypoint
+            try await db.collection("groups")
+                .document(groupId)
+                .collection("itinerary")
+                .document("current")
+                .collection("waypoints")
+                .document(waypointId)
+                .updateData([
+                    "isInProgress": true,
+                    "updatedAt": Timestamp(date: Date())
+                ])
+            
+            await updateItineraryDocument(groupId: groupId)
+            
+            await notifyItineraryUpdate(
+                groupId: groupId,
+                action: .updated,
+                waypointName: waypoint.name,
+                updatedBy: updatedBy
+            )
+            
+            // Start Live Activity
+            await startLiveActivity(for: waypoint, groupId: groupId)
+            
+        } catch {
+            errorMessage = "Failed to start waypoint progress: \(error.localizedDescription)"
+        }
+        
+        isLoading = false
+    }
+    
+    func stopWaypointProgress(waypointId: String, groupId: String, updatedBy: String) async {
+        guard let itinerary = currentItinerary,
+              let waypoint = itinerary.waypoints.first(where: { $0.id == waypointId }) else {
+            errorMessage = "Waypoint not found"
+            return
+        }
+        
+        isLoading = true
+        errorMessage = nil
+        
+        do {
+            try await db.collection("groups")
+                .document(groupId)
+                .collection("itinerary")
+                .document("current")
+                .collection("waypoints")
+                .document(waypointId)
+                .updateData([
+                    "isInProgress": false,
+                    "updatedAt": Timestamp(date: Date())
+                ])
+            
+            await updateItineraryDocument(groupId: groupId)
+            
+            // Stop Live Activity
+            await stopLiveActivity()
+            
+        } catch {
+            errorMessage = "Failed to stop waypoint progress: \(error.localizedDescription)"
+        }
+        
+        isLoading = false
+    }
+    
+    private func startLiveActivity(for waypoint: Waypoint, groupId: String) async {
+        if #available(iOS 16.1, *) {
+            let liveActivityService = LiveActivityService()
+            
+            // Calculate initial distance
+            let locationService = LocationService()
+            if let userLocation = locationService.currentLocation {
+                let targetLocation = CLLocation(latitude: waypoint.location.latitude, longitude: waypoint.location.longitude)
+                let totalDistance = userLocation.distance(from: targetLocation)
+                
+                await liveActivityService.startWaypointLiveActivity(
+                    waypointName: waypoint.name,
+                    groupId: groupId,
+                    userId: "current_user", // You might want to pass this as parameter
+                    totalDistance: totalDistance,
+                    currentDistance: totalDistance
+                )
+            }
+        }
+    }
+    
+    private func stopLiveActivity() async {
+        if #available(iOS 16.1, *) {
+            let liveActivityService = LiveActivityService()
+            await liveActivityService.stopLiveActivity()
+        }
+    }
+    
     func removeWaypoint(waypointId: String, groupId: String, updatedBy: String) async {
         guard let itinerary = currentItinerary,
               let waypoint = itinerary.waypoints.first(where: { $0.id == waypointId }) else {
@@ -225,7 +345,7 @@ class ItineraryService: ObservableObject {
                 .collection("waypoints")
                 .document(waypointId)
                 .updateData([
-                    "isActive": false,
+                    "isCompleted": true,
                     "updatedAt": Timestamp(date: Date())
                 ])
             
@@ -347,20 +467,26 @@ class ItineraryService: ObservableObject {
                 }
                 
                 let description = data["description"] as? String
+                let isCompleted = data["isCompleted"] as? Bool ?? false
+                let isInProgress = data["isInProgress"] as? Bool ?? false
                 let location = GeoPoint(latitude: lat, longitude: lng)
                 
-                var waypoint = Waypoint(
+                // Create waypoint from Firestore data
+                return Waypoint(
+                    id: id,
                     groupId: groupId,
                     name: name,
                     description: description,
                     type: type,
                     location: location,
+                    createdAt: createdAtTimestamp.dateValue(),
+                    updatedAt: updatedAtTimestamp.dateValue(),
                     createdBy: createdBy,
+                    isActive: isActive,
+                    isCompleted: isCompleted,
+                    isInProgress: isInProgress,
                     order: order
                 )
-                
-                // Update with actual data
-                return waypoint
             }
             
             var itinerary = GroupItinerary(groupId: groupId)

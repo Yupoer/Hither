@@ -384,6 +384,7 @@ struct InviteSheet: View {
     let group: HitherGroup
     @ObservedObject var groupService: GroupService
     @Environment(\.presentationMode) var presentationMode
+    @State private var showingShareSheet = false
     
     var body: some View {
         NavigationView {
@@ -426,7 +427,7 @@ struct InviteSheet: View {
                 
                 VStack(spacing: 12) {
                     Button("Share Invite Code") {
-                        // Share functionality
+                        showingShareSheet = true
                     }
                     .padding()
                     .frame(maxWidth: .infinity)
@@ -452,6 +453,31 @@ struct InviteSheet: View {
                     presentationMode.wrappedValue.dismiss()
                 }
             )
+            .sheet(isPresented: $showingShareSheet) {
+                ShareSheet(
+                    activityItems: [shareText]
+                )
+            }
         }
+    }
+    
+    private var shareText: String {
+        "Join my group '\(group.name)' on Hither! Use invite code: \(group.inviteCode)"
+    }
+}
+
+struct ShareSheet: UIViewControllerRepresentable {
+    let activityItems: [Any]
+    
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let activityViewController = UIActivityViewController(
+            activityItems: activityItems,
+            applicationActivities: nil
+        )
+        return activityViewController
+    }
+    
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {
+        // No update needed
     }
 }

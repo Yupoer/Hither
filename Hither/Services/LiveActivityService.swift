@@ -13,12 +13,83 @@ import SwiftUI
 @available(iOS 16.1, *)
 @MainActor
 class LiveActivityService: ObservableObject {
-    @Published var currentActivity: Activity<GroupTrackingAttributes>?
+    @Published var currentActivity: Any?
     @Published var isSupported = ActivityAuthorizationInfo().areActivitiesEnabled
     @Published var errorMessage: String?
     
     private var groupId: String?
     private var userId: String?
+    
+    func startWaypointLiveActivity(
+        waypointName: String,
+        groupId: String,
+        userId: String,
+        totalDistance: Double,
+        currentDistance: Double
+    ) async {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            errorMessage = "Live Activities are not enabled"
+            return
+        }
+        
+        // Stop any existing activity first
+        await stopLiveActivity()
+        
+        let attributes = WaypointProgressAttributes(
+            waypointName: waypointName,
+            groupId: groupId,
+            userId: userId
+        )
+        
+        let initialState = WaypointProgressAttributes.ContentState(
+            totalDistance: totalDistance,
+            currentDistance: currentDistance,
+            progressPercentage: max(0, min(100, (totalDistance - currentDistance) / totalDistance * 100)),
+            isActive: true
+        )
+        
+        let content = ActivityContent(
+            state: initialState,
+            staleDate: Calendar.current.date(byAdding: .hour, value: 2, to: Date())
+        )
+        
+        do {
+            let activity = try Activity<WaypointProgressAttributes>.request(
+                attributes: attributes,
+                content: content
+            )
+            
+            self.currentActivity = activity
+            print("Started waypoint Live Activity: \(waypointName)")
+            
+        } catch {
+            errorMessage = "Failed to start waypoint Live Activity: \(error.localizedDescription)"
+            print("Live Activity error: \(error)")
+        }
+    }
+    
+    func updateWaypointProgress(
+        currentDistance: Double,
+        totalDistance: Double
+    ) async {
+        guard let activity = currentActivity as? Activity<WaypointProgressAttributes> else { return }
+        
+        let progressPercentage = max(0, min(100, (totalDistance - currentDistance) / totalDistance * 100))
+        
+        let newState = WaypointProgressAttributes.ContentState(
+            totalDistance: totalDistance,
+            currentDistance: currentDistance,
+            progressPercentage: progressPercentage,
+            isActive: true
+        )
+        
+        let content = ActivityContent(
+            state: newState,
+            staleDate: Calendar.current.date(byAdding: .hour, value: 2, to: Date())
+        )
+        
+        await activity.update(content)
+    }
     
     func startLiveActivity(
         groupName: String,
@@ -79,7 +150,7 @@ class LiveActivityService: ObservableObject {
         nextWaypoint: String? = nil,
         isTracking: Bool? = nil
     ) async {
-        guard let activity = currentActivity else { return }
+        guard let activity = currentActivity as? Activity<GroupTrackingAttributes> else { return }
         
         let currentState = activity.content.state
         
@@ -99,8 +170,23 @@ class LiveActivityService: ObservableObject {
         }
     }
     
-    func endLiveActivity() async {
+    func stopLiveActivity() async {
         guard let activity = currentActivity else { return }
+        
+        do {
+            if let groupActivity = activity as? Activity<GroupTrackingAttributes> {
+                await groupActivity.end(dismissalPolicy: .immediate)
+            } else if let waypointActivity = activity as? Activity<WaypointProgressAttributes> {
+                await waypointActivity.end(dismissalPolicy: .immediate)
+            }
+            currentActivity = nil
+        } catch {
+            errorMessage = "Failed to stop Live Activity: \(error.localizedDescription)"
+        }
+    }
+    
+    func endLiveActivity() async {
+        guard let activity = currentActivity as? Activity<GroupTrackingAttributes> else { return }
         
         let finalState = GroupTrackingAttributes.ContentState(
             leaderName: activity.content.state.leaderName,
@@ -147,7 +233,66 @@ struct GroupTrackingAttributes: ActivityAttributes {
     let userRole: MemberRole
 }
 
+struct WaypointProgressAttributes: ActivityAttributes {
+    public struct ContentState: Codable, Hashable {
+        let totalDistance: Double
+        let currentDistance: Double
+        let progressPercentage: Double
+        let isActive: Bool
+    }
+    
+    let waypointName: String
+    let groupId: String
+    let userId: String
+}
+
 // MARK: - Widget Configuration
+
+@available(iOS 16.1, *)
+struct WaypointProgressLiveActivity: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: WaypointProgressAttributes.self) { context in
+            // Lock screen/banner UI
+            WaypointProgressLockScreenView(context: context)
+        } dynamicIsland: { context in
+            // Dynamic Island UI
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    HStack {
+                        Image(systemName: "figure.walk")
+                            .foregroundColor(.blue)
+                        Text("Going to")
+                            .font(.caption)
+                    }
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    HStack {
+                        Image(systemName: "flag.fill")
+                            .foregroundColor(.red)
+                        Text(context.attributes.waypointName)
+                            .font(.caption)
+                            .lineLimit(1)
+                    }
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    WaypointProgressView(
+                        progress: context.state.progressPercentage / 100,
+                        distance: context.state.currentDistance
+                    )
+                }
+            } compactLeading: {
+                Image(systemName: "figure.walk")
+                    .foregroundColor(.blue)
+            } compactTrailing: {
+                Image(systemName: "flag.fill")
+                    .foregroundColor(.red)
+            } minimal: {
+                Image(systemName: "figure.walk")
+                    .foregroundColor(.blue)
+            }
+        }
+    }
+}
 
 @available(iOS 16.1, *)
 struct GroupTrackingLiveActivity: Widget {
@@ -273,5 +418,84 @@ struct LockScreenLiveActivityView: View {
         }
         .padding()
         .background(Color.black.opacity(0.1))
+    }
+}
+
+// MARK: - Waypoint Progress Views
+
+@available(iOS 16.1, *)
+struct WaypointProgressView: View {
+    let progress: Double
+    let distance: Double
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Image(systemName: "figure.walk")
+                    .foregroundColor(.blue)
+                    .font(.title2)
+                
+                Spacer()
+                
+                VStack(alignment: .center, spacing: 2) {
+                    Text(LocationService.formatDistance(distance))
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                    Text("remaining")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "flag.fill")
+                    .foregroundColor(.red)
+                    .font(.title2)
+            }
+            
+            // Progress bar
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Rectangle()
+                        .frame(height: 4)
+                        .foregroundColor(Color.gray.opacity(0.3))
+                    
+                    Rectangle()
+                        .frame(width: geometry.size.width * progress, height: 4)
+                        .foregroundColor(.blue)
+                }
+                .cornerRadius(2)
+            }
+            .frame(height: 4)
+        }
+        .padding(.horizontal)
+    }
+}
+
+@available(iOS 16.1, *)
+struct WaypointProgressLockScreenView: View {
+    let context: ActivityViewContext<WaypointProgressAttributes>
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Text("Going to \(context.attributes.waypointName)")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                Spacer()
+                Text(LocationService.formatDistance(context.state.currentDistance))
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.blue)
+            }
+            
+            WaypointProgressView(
+                progress: context.state.progressPercentage / 100,
+                distance: context.state.currentDistance
+            )
+        }
+        .padding()
+        .background(Color.black.opacity(0.1))
+        .cornerRadius(12)
     }
 }
