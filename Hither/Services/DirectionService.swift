@@ -8,6 +8,8 @@
 import Foundation
 import CoreLocation
 import NearbyInteraction
+import SwiftUI
+import Combine
 
 @MainActor
 class DirectionService: NSObject, ObservableObject {
@@ -34,14 +36,16 @@ class DirectionService: NSObject, ObservableObject {
     }
     
     private func setupNearbyInteraction() {
-        guard NISession.isSupported else {
-            isNearbyInteractionAvailable = false
-            return
+        if #available(iOS 16.0, *) {
+            isNearbyInteractionAvailable = NISession.deviceCapabilities.supportsPreciseDistanceMeasurement
+        } else {
+            isNearbyInteractionAvailable = NISession.isSupported
         }
         
-        niSession = NISession()
-        niSession?.delegate = self
-        isNearbyInteractionAvailable = true
+        if isNearbyInteractionAvailable {
+            niSession = NISession()
+            niSession?.delegate = self
+        }
     }
     
     private func setupLocationObserver() {
@@ -63,7 +67,7 @@ class DirectionService: NSObject, ObservableObject {
     
     private func updateDirectionCalculations() {
         guard let leaderLocation = targetLeaderLocation,
-              let currentLocation = locationService.currentLocation else {
+              let _ = locationService.currentLocation else {
             distanceToLeader = nil
             bearingToLeader = nil
             return
@@ -76,16 +80,15 @@ class DirectionService: NSObject, ObservableObject {
         bearingToLeader = locationService.calculateBearing(to: leaderLocation)
     }
     
-    func startNearbyInteraction(with discoveryToken: Data) {
+    func startNearbyInteraction(with discoveryToken: NIDiscoveryToken) {
         guard let niSession = niSession,
-              NISession.isSupported else {
+              isNearbyInteractionAvailable else {
             errorMessage = "Nearby Interaction not supported on this device"
             return
         }
         
         do {
-            let token = try NIDiscoveryToken(data: discoveryToken)
-            let configuration = NINearbyPeerConfiguration(peerToken: token)
+            let configuration = NINearbyPeerConfiguration(peerToken: discoveryToken)
             niSession.run(configuration)
         } catch {
             errorMessage = "Failed to start Nearby Interaction: \(error.localizedDescription)"
@@ -97,8 +100,8 @@ class DirectionService: NSObject, ObservableObject {
         nearbyObjects.removeAll()
     }
     
-    var currentDiscoveryToken: Data? {
-        return niSession?.discoveryToken?.data
+    var currentDiscoveryToken: NIDiscoveryToken? {
+        return niSession?.discoveryToken
     }
     
     // Helper functions for direction display
@@ -126,43 +129,46 @@ class DirectionService: NSObject, ObservableObject {
     }
 }
 
-extension DirectionService: NISessionDelegate {
-    func session(_ session: NISession, didUpdate nearbyObjects: [NINearbyObject]) {
-        self.nearbyObjects = nearbyObjects
-        
-        // Update distance and direction from nearby interaction if available
-        if let nearbyObject = nearbyObjects.first {
-            if let distance = nearbyObject.distance {
-                distanceToLeader = Double(distance)
-            }
+extension DirectionService: @preconcurrency NISessionDelegate {
+    nonisolated func session(_ session: NISession, didUpdate nearbyObjects: [NINearbyObject]) {
+        Task { @MainActor in
+            self.nearbyObjects = nearbyObjects
             
-            if let direction = nearbyObject.direction {
-                // Convert simd_float3 direction to bearing angle
-                let bearing = atan2(Double(direction.x), Double(direction.z)) * 180 / .pi
-                bearingToLeader = bearing >= 0 ? bearing : bearing + 360
+            // Update distance and direction from nearby interaction if available
+            if let nearbyObject = nearbyObjects.first {
+                if let distance = nearbyObject.distance {
+                    distanceToLeader = Double(distance)
+                }
+                
+                if let direction = nearbyObject.direction {
+                    // Convert simd_float3 direction to bearing angle
+                    let bearing = atan2(Double(direction.x), Double(direction.z)) * 180 / .pi
+                    bearingToLeader = bearing >= 0 ? bearing : bearing + 360
+                }
             }
         }
     }
     
-    func session(_ session: NISession, didRemove nearbyObjects: [NINearbyObject], reason: NINearbyObject.RemovalReason) {
-        self.nearbyObjects.removeAll { removedObject in
-            nearbyObjects.contains { $0.discoveryToken == removedObject.discoveryToken }
+    nonisolated func session(_ session: NISession, didRemove nearbyObjects: [NINearbyObject], reason: NINearbyObject.RemovalReason) {
+        Task { @MainActor in
+            self.nearbyObjects.removeAll { removedObject in
+                nearbyObjects.contains { $0.discoveryToken == removedObject.discoveryToken }
+            }
         }
     }
     
-    func sessionWasSuspended(_ session: NISession) {
+    nonisolated func sessionWasSuspended(_ session: NISession) {
         // Handle session suspension
     }
     
-    func sessionSuspensionEnded(_ session: NISession) {
+    nonisolated func sessionSuspensionEnded(_ session: NISession) {
         // Handle session resumption
     }
     
-    func session(_ session: NISession, didInvalidateWith error: Error) {
-        errorMessage = "Nearby Interaction session error: \(error.localizedDescription)"
-        nearbyObjects.removeAll()
+    nonisolated func session(_ session: NISession, didInvalidateWith error: Error) {
+        Task { @MainActor in
+            errorMessage = "Nearby Interaction session error: \(error.localizedDescription)"
+            nearbyObjects.removeAll()
+        }
     }
 }
-
-// Add import for Combine
-import Combine
