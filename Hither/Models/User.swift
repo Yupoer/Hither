@@ -8,7 +8,7 @@
 import Foundation
 import FirebaseAuth
 
-struct HitherUser: Identifiable, Codable {
+struct HitherUser: Identifiable, Codable, Equatable {
     let id: String
     let email: String?
     let displayName: String
@@ -17,7 +17,9 @@ struct HitherUser: Identifiable, Codable {
     init(from firebaseUser: FirebaseAuth.User) {
         self.id = firebaseUser.uid
         self.email = firebaseUser.email
-        self.displayName = firebaseUser.displayName ?? "Anonymous"
+        // Use email prefix as fallback if no display name
+        let emailName = firebaseUser.email?.components(separatedBy: "@").first ?? "User"
+        self.displayName = firebaseUser.displayName ?? emailName
         self.photoURL = firebaseUser.photoURL?.absoluteString
     }
     

@@ -8,11 +8,14 @@
 import SwiftUI
 
 struct LoginView: View {
-    @StateObject private var authService = AuthenticationService()
+    @EnvironmentObject private var authService: AuthenticationService
+    @EnvironmentObject private var languageService: LanguageService
+    @StateObject private var locationService = LocationService()
     @State private var email = ""
     @State private var password = ""
     @State private var displayName = ""
     @State private var isSignUp = false
+    @State private var isButtonPressed = false
     
     var body: some View {
         NavigationView {
@@ -22,11 +25,11 @@ struct LoginView: View {
                         .font(.system(size: 60))
                         .foregroundColor(.blue)
                     
-                    Text("Hither")
+                    Text("app_name".localized)
                         .font(.largeTitle)
                         .fontWeight(.bold)
                     
-                    Text("Stay Connected, Stay Safe")
+                    Text("app_subtitle".localized)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -34,33 +37,57 @@ struct LoginView: View {
                 
                 VStack(spacing: 16) {
                     if isSignUp {
-                        TextField("Display Name", text: $displayName)
+                        TextField("display_name".localized, text: $displayName)
                             .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .onSubmit {
+                                // Move focus to email field when Enter is pressed
+                            }
                     }
                     
-                    TextField("Email", text: $email)
+                    TextField("email".localized, text: $email)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                         .keyboardType(.emailAddress)
                         .autocapitalization(.none)
+                        .onSubmit {
+                            // Move focus to password field when Enter is pressed
+                        }
                     
-                    SecureField("Password", text: $password)
+                    SecureField("password".localized, text: $password)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .onSubmit {
+                            // Trigger sign in when Enter is pressed on password field
+                            handleSignIn()
+                        }
                     
                     Button(action: {
+                        // Immediate feedback
+                        isButtonPressed = true
+                        
+                        // Provide haptic feedback
+                        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                        impactFeedback.impactOccurred()
+                        
                         Task {
                             if isSignUp {
                                 await authService.signUpWithEmail(email, password: password, displayName: displayName)
                             } else {
                                 await authService.signInWithEmail(email, password: password)
                             }
+                            
+                            // Reset button state
+                            await MainActor.run {
+                                isButtonPressed = false
+                            }
                         }
                     }) {
-                        Text(isSignUp ? "Sign Up" : "Sign In")
+                        Text(isSignUp ? "sign_up".localized : "sign_in".localized)
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(Color.blue)
+                            .background(isButtonPressed ? Color.blue.opacity(0.7) : Color.blue)
                             .foregroundColor(.white)
                             .cornerRadius(8)
+                            .scaleEffect(isButtonPressed ? 0.95 : 1.0)
+                            .animation(.easeInOut(duration: 0.1), value: isButtonPressed)
                     }
                     .disabled(authService.isLoading || email.isEmpty || password.isEmpty || (isSignUp && displayName.isEmpty))
                     
@@ -111,7 +138,7 @@ struct LoginView: View {
                 }
                 
                 if authService.isLoading {
-                    ProgressView()
+                    SheepLoadingView(message: "Signing you in...")
                         .padding()
                 }
                 
@@ -127,7 +154,26 @@ struct LoginView: View {
             }
             .padding()
             .navigationTitle("")
-            .navigationBarHidden(true)
+            .navigationBarHidden(false)
+            .navigationBarItems(trailing: LanguagePicker(languageService: languageService))
+            .onAppear {
+                // Preload location services for better map performance
+                locationService.preloadLocationServices()
+            }
+        }
+    }
+    
+    private func handleSignIn() {
+        // Only trigger sign in if all required fields are filled
+        guard !email.isEmpty && !password.isEmpty else { return }
+        if isSignUp && displayName.isEmpty { return }
+        
+        Task {
+            if isSignUp {
+                await authService.signUpWithEmail(email, password: password, displayName: displayName)
+            } else {
+                await authService.signInWithEmail(email, password: password)
+            }
         }
     }
 }

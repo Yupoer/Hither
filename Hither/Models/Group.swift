@@ -17,25 +17,31 @@ struct GroupMember: Identifiable, Codable, Equatable {
     let id: String
     let userId: String
     let displayName: String
+    var nickname: String?
+    var avatarEmoji: String?
     let role: MemberRole
     let joinedAt: Date
     var location: GeoPoint?
     var lastLocationUpdate: Date?
     
-    init(userId: String, displayName: String, role: MemberRole) {
+    init(userId: String, displayName: String, role: MemberRole, nickname: String? = nil, avatarEmoji: String? = nil) {
         self.id = UUID().uuidString
         self.userId = userId
         self.displayName = displayName
+        self.nickname = nickname
+        self.avatarEmoji = avatarEmoji
         self.role = role
         self.joinedAt = Date()
         self.location = nil
         self.lastLocationUpdate = nil
     }
     
-    init(id: String, userId: String, displayName: String, role: MemberRole, joinedAt: Date, location: GeoPoint? = nil, lastLocationUpdate: Date? = nil) {
+    init(id: String, userId: String, displayName: String, nickname: String? = nil, avatarEmoji: String? = nil, role: MemberRole, joinedAt: Date, location: GeoPoint? = nil, lastLocationUpdate: Date? = nil) {
         self.id = id
         self.userId = userId
         self.displayName = displayName
+        self.nickname = nickname
+        self.avatarEmoji = avatarEmoji
         self.role = role
         self.joinedAt = joinedAt
         self.location = location
@@ -81,6 +87,17 @@ struct HitherGroup: Identifiable, Codable, Equatable {
         self.inviteExpiresAt = Date().addingTimeInterval(24 * 60 * 60) // 24 hours
         self.members = [GroupMember(userId: leaderId, displayName: leaderName, role: .leader)]
         self.isActive = true
+    }
+    
+    init(id: String, name: String, leaderId: String, leaderName: String, createdAt: Date, inviteCode: String, inviteExpiresAt: Date, members: [GroupMember], isActive: Bool) {
+        self.id = id
+        self.name = name
+        self.leaderId = leaderId
+        self.createdAt = createdAt
+        self.inviteCode = inviteCode
+        self.inviteExpiresAt = inviteExpiresAt
+        self.members = members
+        self.isActive = isActive
     }
     
     var leader: GroupMember? {

@@ -300,6 +300,7 @@
 			knownRegions = (
 				en,
 				Base,
+				"zh-Hant",
 			);
 			mainGroup = 74DE4E772E288B8C00FD5267;
 			minimizedProjectReferenceProxies = 1;
@@ -586,7 +587,7 @@
 				DEVELOPMENT_TEAM = 5LBPG5TUKP;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleURLName = \"google-sign-in\";\n    CFBundleURLSchemes =     (\n        \"182730375403-4k9s4c4mp8vvkglfg55i8i33rc6si8p3.apps.googleusercontent.com\"\n    );\n}";
+				INFOPLIST_KEY_CFBundleURLTypes = "(\n    {\n        CFBundleURLName = \"google-sign-in\";\n        CFBundleURLSchemes =         (\n            \"182730375403-4k9s4c4mp8vvkglfg55i8i33rc6si8p3.apps.googleusercontent.com\"\n        );\n    },\n    {\n        CFBundleURLName = \"hither-deeplink\";\n        CFBundleURLSchemes =         (\n            \"hither\"\n        );\n    }\n)";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "This app needs location access to track your position within the group even when the app is in the background.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "This app needs location access to track your position within the group.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -618,7 +619,7 @@
 				DEVELOPMENT_TEAM = 5LBPG5TUKP;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleURLName = \"google-sign-in\";\n    CFBundleURLSchemes =     (\n        \"182730375403-4k9s4c4mp8vvkglfg55i8i33rc6si8p3.apps.googleusercontent.com\"\n    );\n}";
+				INFOPLIST_KEY_CFBundleURLTypes = "(\n    {\n        CFBundleURLName = \"google-sign-in\";\n        CFBundleURLSchemes =         (\n            \"182730375403-4k9s4c4mp8vvkglfg55i8i33rc6si8p3.apps.googleusercontent.com\"\n        );\n    },\n    {\n        CFBundleURLName = \"hither-deeplink\";\n        CFBundleURLSchemes =         (\n            \"hither\"\n        );\n    }\n)";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "This app needs location access to track your position within the group even when the app is in the background.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "This app needs location access to track your position within the group.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

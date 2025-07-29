@@ -45,6 +45,7 @@ struct ConnectionStatusView: View {
     
     var body: some View {
         VStack(spacing: 8) {
+            // Status indicators in a box
             HStack(spacing: 12) {
                 // Location status
                 HStack(spacing: 4) {
@@ -73,6 +74,11 @@ struct ConnectionStatusView: View {
                 // Battery level
                 batteryIndicator
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color(.systemBackground))
+            .cornerRadius(8)
+            .shadow(color: Color.black.opacity(0.1), radius: 2)
             
             // Error messages
             if let locationError = locationService.errorMessage {
@@ -150,8 +156,8 @@ struct RetryButton: View {
         }) {
             HStack {
                 if isLoading {
-                    ProgressView()
-                        .scaleEffect(0.8)
+                    SheepLoadingView()
+                        .scaleEffect(0.4)
                 } else {
                     Image(systemName: "arrow.clockwise")
                 }
@@ -222,12 +228,8 @@ struct LoadingStateView: View {
     
     var body: some View {
         VStack(spacing: 16) {
-            ProgressView()
+            SheepLoadingView(message: message)
                 .scaleEffect(1.2)
-            
-            Text(message)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.gray.opacity(0.05))

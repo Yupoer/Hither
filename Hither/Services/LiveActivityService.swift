@@ -9,6 +9,7 @@ import Foundation
 import ActivityKit
 import WidgetKit
 import SwiftUI
+import UIKit
 
 @available(iOS 16.1, *)
 @MainActor
@@ -20,32 +21,59 @@ class LiveActivityService: ObservableObject {
     private var groupId: String?
     private var userId: String?
     
-    func startWaypointLiveActivity(
-        waypointName: String,
+    func startNavigationLiveActivity(
+        groupName: String,
         groupId: String,
         userId: String,
-        totalDistance: Double,
-        currentDistance: Double
+        userRole: String,
+        leaderName: String,
+        memberCount: Int,
+        destinationName: String? = nil,
+        currentDistance: Double? = nil,
+        totalDistance: Double? = nil,
+        groupStatus: String = "waiting",
+        message: String? = nil
     ) async {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
-            errorMessage = "Live Activities are not enabled"
+        // Check permissions first
+        await requestPermission()
+        
+        // Allow Live Activities for single user groups on real devices
+        guard ActivityAuthorizationInfo().areActivitiesEnabled || isSimulator() else {
+            errorMessage = "Live Activities are not enabled in Settings"
+            print("Live Activities not enabled")
+            return
+        }
+        
+        // Skip Live Activity creation on simulator but log it
+        if isSimulator() {
+            print("⚠️ Skipping Live Activity creation on Simulator")
+            print("📱 Live Activity would show countdown for \(groupName) (\(memberCount) member\(memberCount == 1 ? "" : "s"))")
             return
         }
         
         // Stop any existing activity first
         await stopLiveActivity()
         
-        let attributes = WaypointProgressAttributes(
-            waypointName: waypointName,
+        print("Starting Countdown Live Activity for group: \(groupName)")
+        
+        let attributes = HitherGroupAttributes(
+            groupName: groupName,
             groupId: groupId,
-            userId: userId
+            userRole: userRole,
+            activityType: "navigation"
         )
         
-        let initialState = WaypointProgressAttributes.ContentState(
-            totalDistance: totalDistance,
+        let initialState = HitherGroupAttributes.ContentState(
             currentDistance: currentDistance,
-            progressPercentage: max(0, min(100, (totalDistance - currentDistance) / totalDistance * 100)),
-            isActive: true
+            totalDistance: totalDistance,
+            destinationName: destinationName,
+            groupStatus: groupStatus,
+            memberCount: memberCount,
+            leaderName: leaderName,
+            isCountdownActive: false,
+            countdownStartTime: nil,
+            countdownDuration: 60.0, // 1 minute
+            message: message
         )
         
         let content = ActivityContent(
@@ -54,33 +82,190 @@ class LiveActivityService: ObservableObject {
         )
         
         do {
-            let activity = try Activity<WaypointProgressAttributes>.request(
+            let activity = try Activity.request(
                 attributes: attributes,
-                content: content
+                content: content,
+                pushType: nil
             )
             
             self.currentActivity = activity
-            print("Started waypoint Live Activity: \(waypointName)")
+            print("✅ Successfully started Countdown Live Activity for: \(groupName)")
+            print("Activity ID: \(activity.id)")
             
         } catch {
             errorMessage = "Failed to start waypoint Live Activity: \(error.localizedDescription)"
-            print("Live Activity error: \(error)")
+            print("❌ Live Activity error: \(error)")
+            
+            // Additional error details
+            print("Error details: \(error)")
+            print("Error type: \(type(of: error))")
+            
+            // Check common error conditions
+            let errorDescription = error.localizedDescription
+            if errorDescription.contains("not enabled") || errorDescription.contains("disabled") {
+                print("Live Activities are disabled in Settings")
+            } else if errorDescription.contains("limit") {
+                print("Live Activity limit exceeded")
+            } else if errorDescription.contains("permission") {
+                print("Live Activity permission denied")
+            }
         }
     }
     
-    func updateWaypointProgress(
-        currentDistance: Double,
-        totalDistance: Double
-    ) async {
-        guard let activity = currentActivity as? Activity<WaypointProgressAttributes> else { return }
+    func updateLocationProgress(currentDistance: Double, totalDistance: Double? = nil, destinationName: String? = nil) async {
+        guard let activity = currentActivity as? Activity<HitherGroupAttributes> else { 
+            print("❌ No active Live Activity to update")
+            return 
+        }
         
-        let progressPercentage = max(0, min(100, (totalDistance - currentDistance) / totalDistance * 100))
-        
-        let newState = WaypointProgressAttributes.ContentState(
-            totalDistance: totalDistance,
+        let currentState = activity.content.state
+        let newState = HitherGroupAttributes.ContentState(
             currentDistance: currentDistance,
-            progressPercentage: progressPercentage,
-            isActive: true
+            totalDistance: totalDistance ?? currentState.totalDistance,
+            destinationName: destinationName ?? currentState.destinationName,
+            groupStatus: currentState.groupStatus,
+            memberCount: currentState.memberCount,
+            leaderName: currentState.leaderName,
+            isCountdownActive: currentState.isCountdownActive,
+            countdownStartTime: currentState.countdownStartTime,
+            countdownDuration: currentState.countdownDuration,
+            message: currentState.message
+        )
+        
+        let content = ActivityContent(
+            state: newState,
+            staleDate: Calendar.current.date(byAdding: .minute, value: 2, to: Date())
+        )
+        
+        do {
+            await activity.update(content)
+            print("✅ Successfully updated location progress: \(currentDistance)m")
+        } catch {
+            errorMessage = "Failed to update location progress: \(error.localizedDescription)"
+            print("❌ Failed to update location progress: \(error)")
+        }
+    }
+    
+    func updateGroupStatus(_ status: String, message: String? = nil) async {
+        guard let activity = currentActivity as? Activity<HitherGroupAttributes> else { 
+            print("❌ No active Live Activity to update status")
+            return 
+        }
+        
+        let currentState = activity.content.state
+        let newState = HitherGroupAttributes.ContentState(
+            currentDistance: currentState.currentDistance,
+            totalDistance: currentState.totalDistance,
+            destinationName: currentState.destinationName,
+            groupStatus: status,
+            memberCount: currentState.memberCount,
+            leaderName: currentState.leaderName,
+            isCountdownActive: currentState.isCountdownActive,
+            countdownStartTime: currentState.countdownStartTime,
+            countdownDuration: currentState.countdownDuration,
+            message: message ?? currentState.message
+        )
+        
+        let content = ActivityContent(
+            state: newState,
+            staleDate: Calendar.current.date(byAdding: .minute, value: 2, to: Date())
+        )
+        
+        do {
+            await activity.update(content)
+            print("✅ Successfully updated group status: \(status)")
+        } catch {
+            errorMessage = "Failed to update group status: \(error.localizedDescription)"
+            print("❌ Failed to update group status: \(error)")
+        }
+    }
+    
+    func startCountdown() async {
+        guard let activity = currentActivity as? Activity<HitherGroupAttributes> else { 
+            print("❌ No active Live Activity to start countdown")
+            return 
+        }
+        
+        let currentState = activity.content.state
+        let newState = HitherGroupAttributes.ContentState(
+            currentDistance: currentState.currentDistance,
+            totalDistance: currentState.totalDistance,
+            destinationName: currentState.destinationName,
+            groupStatus: currentState.groupStatus,
+            memberCount: currentState.memberCount,
+            leaderName: currentState.leaderName,
+            isCountdownActive: true,
+            countdownStartTime: Date(),
+            countdownDuration: 60.0, // 1 minute
+            message: "Countdown started!"
+        )
+        
+        let content = ActivityContent(
+            state: newState,
+            staleDate: Calendar.current.date(byAdding: .minute, value: 2, to: Date())
+        )
+        
+        do {
+            await activity.update(content)
+            print("✅ Successfully started 1-minute countdown")
+            
+            // Schedule countdown completion check
+            Task {
+                try await Task.sleep(nanoseconds: 61_000_000_000) // 61 seconds
+                await finishCountdown()
+            }
+        } catch {
+            errorMessage = "Failed to start countdown: \(error.localizedDescription)"
+            print("❌ Failed to start countdown: \(error)")
+        }
+    }
+    
+    func finishCountdown() async {
+        guard let activity = currentActivity as? Activity<HitherGroupAttributes> else { return }
+        
+        let currentState = activity.content.state
+        let newState = HitherGroupAttributes.ContentState(
+            currentDistance: currentState.currentDistance,
+            totalDistance: currentState.totalDistance,
+            destinationName: currentState.destinationName,
+            groupStatus: currentState.groupStatus,
+            memberCount: currentState.memberCount,
+            leaderName: currentState.leaderName,
+            isCountdownActive: false,
+            countdownStartTime: currentState.countdownStartTime,
+            countdownDuration: currentState.countdownDuration,
+            message: "Countdown completed!"
+        )
+        
+        let content = ActivityContent(
+            state: newState,
+            staleDate: Calendar.current.date(byAdding: .hour, value: 1, to: Date())
+        )
+        
+        do {
+            await activity.update(content)
+            print("✅ Countdown finished")
+        } catch {
+            errorMessage = "Failed to finish countdown: \(error.localizedDescription)"
+            print("❌ Failed to finish countdown: \(error)")
+        }
+    }
+    
+    func resetCountdown() async {
+        guard let activity = currentActivity as? Activity<HitherGroupAttributes> else { return }
+        
+        let currentState = activity.content.state
+        let newState = HitherGroupAttributes.ContentState(
+            currentDistance: currentState.currentDistance,
+            totalDistance: currentState.totalDistance,
+            destinationName: currentState.destinationName,
+            groupStatus: currentState.groupStatus,
+            memberCount: currentState.memberCount,
+            leaderName: currentState.leaderName,
+            isCountdownActive: false,
+            countdownStartTime: nil,
+            countdownDuration: 60.0,
+            message: "Ready to start countdown"
         )
         
         let content = ActivityContent(
@@ -88,113 +273,48 @@ class LiveActivityService: ObservableObject {
             staleDate: Calendar.current.date(byAdding: .hour, value: 2, to: Date())
         )
         
-        await activity.update(content)
-    }
-    
-    func startLiveActivity(
-        groupName: String,
-        groupId: String,
-        userId: String,
-        userRole: MemberRole,
-        leaderName: String?
-    ) async {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
-            errorMessage = "Live Activities are not enabled"
-            return
-        }
-        
-        self.groupId = groupId
-        self.userId = userId
-        
-        let attributes = GroupTrackingAttributes(
-            groupName: groupName,
-            groupId: groupId,
-            userRole: userRole
-        )
-        
-        let initialState = GroupTrackingAttributes.ContentState(
-            leaderName: leaderName ?? "Leader",
-            memberCount: 1,
-            distanceToLeader: nil,
-            lastCommand: nil,
-            nextWaypoint: nil,
-            isTracking: false
-        )
-        
         do {
-            let activity = try Activity.request(
-                attributes: attributes,
-                content: .init(state: initialState, staleDate: nil),
-                pushType: .token
-            )
-            
-            currentActivity = activity
-            
-            // Monitor for push token
-            for await pushToken in activity.pushTokenUpdates {
-                let tokenString = pushToken.reduce("") { $0 + String(format: "%02x", $1) }
-                print("Live Activity push token: \(tokenString)")
-                // In a real app, you'd send this token to your server
-            }
-            
+            await activity.update(content)
+            print("✅ Countdown reset")
         } catch {
-            errorMessage = "Failed to start Live Activity: \(error.localizedDescription)"
-        }
-    }
-    
-    func updateLiveActivity(
-        leaderName: String? = nil,
-        memberCount: Int? = nil,
-        distanceToLeader: Double? = nil,
-        lastCommand: String? = nil,
-        nextWaypoint: String? = nil,
-        isTracking: Bool? = nil
-    ) async {
-        guard let activity = currentActivity as? Activity<GroupTrackingAttributes> else { return }
-        
-        let currentState = activity.content.state
-        
-        let newState = GroupTrackingAttributes.ContentState(
-            leaderName: leaderName ?? currentState.leaderName,
-            memberCount: memberCount ?? currentState.memberCount,
-            distanceToLeader: distanceToLeader ?? currentState.distanceToLeader,
-            lastCommand: lastCommand ?? currentState.lastCommand,
-            nextWaypoint: nextWaypoint ?? currentState.nextWaypoint,
-            isTracking: isTracking ?? currentState.isTracking
-        )
-        
-        do {
-            await activity.update(.init(state: newState, staleDate: nil))
-        } catch {
-            errorMessage = "Failed to update Live Activity: \(error.localizedDescription)"
+            errorMessage = "Failed to reset countdown: \(error.localizedDescription)"
+            print("❌ Failed to reset countdown: \(error)")
         }
     }
     
     func stopLiveActivity() async {
-        guard let activity = currentActivity else { return }
+        guard let activity = currentActivity else { 
+            print("No Live Activity to stop")
+            return 
+        }
         
         do {
-            if let groupActivity = activity as? Activity<GroupTrackingAttributes> {
-                await groupActivity.end(dismissalPolicy: .immediate)
-            } else if let waypointActivity = activity as? Activity<WaypointProgressAttributes> {
-                await waypointActivity.end(dismissalPolicy: .immediate)
+            if let hitherActivity = activity as? Activity<HitherGroupAttributes> {
+                await hitherActivity.end(dismissalPolicy: .immediate)
+                currentActivity = nil
+                print("✅ Successfully stopped Live Activity")
             }
-            currentActivity = nil
         } catch {
             errorMessage = "Failed to stop Live Activity: \(error.localizedDescription)"
+            print("❌ Stop Live Activity error: \(error)")
         }
     }
     
     func endLiveActivity() async {
-        guard let activity = currentActivity as? Activity<GroupTrackingAttributes> else { return }
+        guard let activity = currentActivity as? Activity<HitherGroupAttributes> else { return }
         
-        let finalState = GroupTrackingAttributes.ContentState(
-            leaderName: activity.content.state.leaderName,
-            memberCount: activity.content.state.memberCount,
-            distanceToLeader: nil,
-            lastCommand: "Group session ended",
-            nextWaypoint: nil,
-            isTracking: false
+        let currentState = activity.content.state
+        let finalState = HitherGroupAttributes.ContentState(
+            currentDistance: currentState.currentDistance,
+            totalDistance: currentState.totalDistance,
+            destinationName: currentState.destinationName,
+            groupStatus: "finished",
+            memberCount: currentState.memberCount,
+            leaderName: currentState.leaderName,
+            isCountdownActive: false,
+            countdownStartTime: currentState.countdownStartTime,
+            countdownDuration: currentState.countdownDuration,
+            message: "Group session ended"
         )
         
         do {
@@ -206,296 +326,74 @@ class LiveActivityService: ObservableObject {
     }
     
     func requestPermission() async {
-        // ActivityKit doesn't require explicit permission request
-        // but we can check if activities are enabled
-        isSupported = ActivityAuthorizationInfo().areActivitiesEnabled
+        // Check ActivityKit support and permissions
+        let authInfo = ActivityAuthorizationInfo()
+        isSupported = authInfo.areActivitiesEnabled
         
-        if !isSupported {
+        print("🔍 Live Activity Permission Check:")
+        print("- areActivitiesEnabled: \(authInfo.areActivitiesEnabled)")
+        print("- iOS Version: \(UIDevice.current.systemVersion)")
+        print("- Device Model: \(UIDevice.current.model)")
+        print("- Is Simulator: \(isSimulator())")
+        
+        // On simulator, Live Activities are not supported
+        if isSimulator() {
+            errorMessage = "Live Activities are not supported on Simulator"
+            print("⚠️ Live Activities not supported on Simulator - use physical device")
+            isSupported = false
+        } else if !isSupported {
             errorMessage = "Live Activities are disabled in Settings"
+            print("❌ Live Activities not supported or disabled")
+        } else {
+            print("✅ Live Activities are supported and enabled")
         }
-    }
-}
-
-// MARK: - Activity Attributes
-
-struct GroupTrackingAttributes: ActivityAttributes {
-    public struct ContentState: Codable, Hashable {
-        let leaderName: String
-        let memberCount: Int
-        let distanceToLeader: Double?
-        let lastCommand: String?
-        let nextWaypoint: String?
-        let isTracking: Bool
     }
     
-    let groupName: String
-    let groupId: String
-    let userRole: MemberRole
-}
-
-struct WaypointProgressAttributes: ActivityAttributes {
-    public struct ContentState: Codable, Hashable {
-        let totalDistance: Double
-        let currentDistance: Double
-        let progressPercentage: Double
-        let isActive: Bool
+    private func isSimulator() -> Bool {
+        #if targetEnvironment(simulator)
+        return true
+        #else
+        return false
+        #endif
     }
     
-    let waypointName: String
-    let groupId: String
-    let userId: String
-}
-
-// MARK: - Widget Configuration
-
-@available(iOS 16.1, *)
-struct WaypointProgressLiveActivity: Widget {
-    var body: some WidgetConfiguration {
-        ActivityConfiguration(for: WaypointProgressAttributes.self) { context in
-            // Lock screen/banner UI
-            WaypointProgressLockScreenView(context: context)
-        } dynamicIsland: { context in
-            // Dynamic Island UI
-            DynamicIsland {
-                DynamicIslandExpandedRegion(.leading) {
-                    HStack {
-                        Image(systemName: "figure.walk")
-                            .foregroundColor(.blue)
-                        Text("Going to")
-                            .font(.caption)
-                    }
-                }
-                DynamicIslandExpandedRegion(.trailing) {
-                    HStack {
-                        Image(systemName: "flag.fill")
-                            .foregroundColor(.red)
-                        Text(context.attributes.waypointName)
-                            .font(.caption)
-                            .lineLimit(1)
-                    }
-                }
-                DynamicIslandExpandedRegion(.bottom) {
-                    WaypointProgressView(
-                        progress: context.state.progressPercentage / 100,
-                        distance: context.state.currentDistance
-                    )
-                }
-            } compactLeading: {
-                Image(systemName: "figure.walk")
-                    .foregroundColor(.blue)
-            } compactTrailing: {
-                Image(systemName: "flag.fill")
-                    .foregroundColor(.red)
-            } minimal: {
-                Image(systemName: "figure.walk")
-                    .foregroundColor(.blue)
-            }
-        }
+    // Simple test method to verify Live Activity works
+    func startTestLiveActivity() async {
+        await startNavigationLiveActivity(
+            groupName: "Test Group",
+            groupId: "test-group",
+            userId: "test-user",
+            userRole: "leader",
+            leaderName: "Test Leader",
+            memberCount: 1,
+            destinationName: "Test Destination",
+            currentDistance: 500.0,
+            totalDistance: 1000.0,
+            groupStatus: "going",
+            message: "Test navigation activity"
+        )
     }
-}
-
-@available(iOS 16.1, *)
-struct GroupTrackingLiveActivity: Widget {
-    var body: some WidgetConfiguration {
-        ActivityConfiguration(for: GroupTrackingAttributes.self) { context in
-            // Lock screen/banner UI
-            LockScreenLiveActivityView(context: context)
-        } dynamicIsland: { context in
-            // Dynamic Island UI
-            DynamicIsland {
-                DynamicIslandExpandedRegion(.leading) {
-                    HStack {
-                        Image(systemName: context.attributes.userRole == .leader ? "crown.fill" : "person.fill")
-                            .foregroundColor(context.attributes.userRole == .leader ? .yellow : .blue)
-                        Text(context.attributes.groupName)
-                            .font(.caption)
-                    }
-                }
-                DynamicIslandExpandedRegion(.trailing) {
-                    HStack {
-                        Circle()
-                            .fill(context.state.isTracking ? Color.green : Color.red)
-                            .frame(width: 8, height: 8)
-                        Text(context.state.isTracking ? "Live" : "Offline")
-                            .font(.caption2)
-                    }
-                }
-                DynamicIslandExpandedRegion(.bottom) {
-                    VStack(spacing: 4) {
-                        if let distance = context.state.distanceToLeader {
-                            Text("Distance to leader: \(Int(distance))m")
-                                .font(.caption2)
-                        }
-                        
-                        if let command = context.state.lastCommand {
-                            Text("Latest: \(command)")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        if let waypoint = context.state.nextWaypoint {
-                            Text("Next: \(waypoint)")
-                                .font(.caption2)
-                                .foregroundColor(.blue)
-                        }
-                    }
-                }
-            } compactLeading: {
-                Image(systemName: context.attributes.userRole == .leader ? "crown.fill" : "person.fill")
-                    .foregroundColor(context.attributes.userRole == .leader ? .yellow : .blue)
-            } compactTrailing: {
-                if let distance = context.state.distanceToLeader {
-                    Text("\(Int(distance))m")
-                        .font(.caption2)
-                        .fontWeight(.semibold)
-                } else {
-                    Circle()
-                        .fill(context.state.isTracking ? Color.green : Color.red)
-                        .frame(width: 8, height: 8)
-                }
-            } minimal: {
-                Image(systemName: context.attributes.userRole == .leader ? "crown.fill" : "person.fill")
-                    .foregroundColor(context.attributes.userRole == .leader ? .yellow : .blue)
-            }
-        }
-    }
-}
-
-@available(iOS 16.1, *)
-struct LockScreenLiveActivityView: View {
-    let context: ActivityViewContext<GroupTrackingAttributes>
     
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Image(systemName: context.attributes.userRole == .leader ? "crown.fill" : "person.fill")
-                        .foregroundColor(context.attributes.userRole == .leader ? .yellow : .blue)
-                    
-                    Text(context.attributes.groupName)
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                }
-                
-                Text("\(context.state.memberCount) members")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                if let command = context.state.lastCommand {
-                    Text("📢 \(command)")
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                }
-            }
-            
-            Spacer()
-            
-            VStack(alignment: .trailing, spacing: 4) {
-                HStack {
-                    Circle()
-                        .fill(context.state.isTracking ? Color.green : Color.red)
-                        .frame(width: 8, height: 8)
-                    
-                    Text(context.state.isTracking ? "Tracking" : "Offline")
-                        .font(.caption)
-                        .foregroundColor(context.state.isTracking ? .green : .red)
-                }
-                
-                if let distance = context.state.distanceToLeader,
-                   context.attributes.userRole == .follower {
-                    Text("\(Int(distance))m to leader")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.blue)
-                }
-                
-                if let waypoint = context.state.nextWaypoint {
-                    Text("→ \(waypoint)")
-                        .font(.caption2)
-                        .foregroundColor(.purple)
-                }
-            }
-        }
-        .padding()
-        .background(Color.black.opacity(0.1))
+    // Start Live Activity for single user (solo mode)
+    func startSoloLiveActivity(
+        groupName: String,
+        groupId: String,
+        userId: String,
+        userName: String
+    ) async {
+        print("🚀 Starting Solo Navigation Live Activity for: \(userName)")
+        
+        await startNavigationLiveActivity(
+            groupName: groupName,
+            groupId: groupId,
+            userId: userId,
+            userRole: "leader",
+            leaderName: userName,
+            memberCount: 1,
+            groupStatus: "waiting",
+            message: "Solo navigation ready"
+        )
     }
 }
 
-// MARK: - Waypoint Progress Views
 
-@available(iOS 16.1, *)
-struct WaypointProgressView: View {
-    let progress: Double
-    let distance: Double
-    
-    var body: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Image(systemName: "figure.walk")
-                    .foregroundColor(.blue)
-                    .font(.title2)
-                
-                Spacer()
-                
-                VStack(alignment: .center, spacing: 2) {
-                    Text(LocationService.formatDistance(distance))
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                    Text("remaining")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                
-                Spacer()
-                
-                Image(systemName: "flag.fill")
-                    .foregroundColor(.red)
-                    .font(.title2)
-            }
-            
-            // Progress bar
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Rectangle()
-                        .frame(height: 4)
-                        .foregroundColor(Color.gray.opacity(0.3))
-                    
-                    Rectangle()
-                        .frame(width: geometry.size.width * progress, height: 4)
-                        .foregroundColor(.blue)
-                }
-                .cornerRadius(2)
-            }
-            .frame(height: 4)
-        }
-        .padding(.horizontal)
-    }
-}
-
-@available(iOS 16.1, *)
-struct WaypointProgressLockScreenView: View {
-    let context: ActivityViewContext<WaypointProgressAttributes>
-    
-    var body: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Text("Going to \(context.attributes.waypointName)")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                Spacer()
-                Text(LocationService.formatDistance(context.state.currentDistance))
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundColor(.blue)
-            }
-            
-            WaypointProgressView(
-                progress: context.state.progressPercentage / 100,
-                distance: context.state.currentDistance
-            )
-        }
-        .padding()
-        .background(Color.black.opacity(0.1))
-        .cornerRadius(12)
-    }
-}

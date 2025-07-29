@@ -14,6 +14,7 @@ import GoogleSignIn
 struct HitherApp: App {
     @StateObject private var authService = AuthenticationService()
     @StateObject private var notificationService = NotificationService()
+    @StateObject private var languageService = LanguageService()
     
     init() {
         FirebaseApp.configure()
@@ -27,6 +28,12 @@ struct HitherApp: App {
         } else {
             print("Warning: Google Sign-In not configured properly. CLIENT_ID missing or using placeholder value.")
         }
+        
+        // Note: The eligibility.plist warning is a known iOS Simulator issue
+        // It doesn't affect app functionality and can be safely ignored
+        #if targetEnvironment(simulator)
+        print("ℹ️ Running in simulator - eligibility.plist warnings are expected and can be ignored")
+        #endif
     }
     
     var body: some Scene {
@@ -34,8 +41,20 @@ struct HitherApp: App {
             ContentView()
                 .environmentObject(authService)
                 .environmentObject(notificationService)
+                .environmentObject(languageService)
                 .onAppear {
                     setupNotifications()
+                    lockOrientation()
+                }
+                .onOpenURL { url in
+                    // Handle Google Sign-In URLs
+                    if GIDSignIn.sharedInstance.handle(url) {
+                        return
+                    }
+                    
+                    // Handle deep link URLs (including QR code scans)
+                    print("🔗 HitherApp received URL: \(url.absoluteString)")
+                    // The URL handling will be passed down to ContentView
                 }
         }
     }
@@ -45,5 +64,16 @@ struct HitherApp: App {
             await notificationService.requestPermission()
             notificationService.setupNotificationCategories()
         }
+    }
+    
+    private func lockOrientation() {
+        // Lock app to portrait orientation
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+            let orientationManager = UIDevice.current
+            orientationManager.setValue(UIInterfaceOrientation.portrait.rawValue, forKey: "orientation")
+        }
+        
+        // Request portrait orientation lock
+        UIDevice.current.setValue(UIInterfaceOrientation.portrait.rawValue, forKey: "orientation")
     }
 }

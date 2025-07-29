@@ -8,46 +8,113 @@
 import ActivityKit
 import WidgetKit
 import SwiftUI
+import AppIntents
 
-// MARK: - Activity Attributes
+// MARK: - App Intent for Countdown Control
+
+@available(iOS 16.0, *)
+struct StartCountdownIntent: LiveActivityIntent {
+    static var title: LocalizedStringResource = "Start Countdown"
+    static var description: LocalizedStringResource = "Start the 1-minute countdown timer"
+    
+    func perform() async throws -> some IntentResult {
+        // This will be handled by the app when the Live Activity button is tapped
+        // The actual countdown logic will be triggered via the URL scheme
+        return .result()
+    }
+}
+
+// MARK: - Helper Functions
+
+func getStatusColor(status: String) -> Color {
+    switch status {
+    case "waiting":
+        return .blue
+    case "countdown":
+        return .orange
+    case "finished":
+        return .green
+    default:
+        return .gray
+    }
+}
+
+// MARK: - Activity Attributes (duplicated for Widget Extension)
 
 struct HitherGroupAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable {
-        // Progress and status
-        let currentDistance: Double
-        let totalDistance: Double
-        let progressPercentage: Double
+        // Location progress
+        let currentDistance: Double? // Distance to destination in meters
+        let totalDistance: Double? // Total distance when started
+        let destinationName: String? // Name of current destination
         
-        // Group info
+        // Group status
+        let groupStatus: String // "going", "stop", "rest", "waiting", "arrived"
         let memberCount: Int
         let leaderName: String
         
-        // Location info
-        let currentLocationName: String?
-        let destinationName: String
+        // Countdown state (optional for timed activities)
+        let isCountdownActive: Bool
+        let countdownStartTime: Date?
+        let countdownDuration: TimeInterval // in seconds (60 for 1 minute)
         
-        // Status
-        let isActive: Bool
-        let lastCommand: String?
-        let batteryLevel: Double?
+        // Optional message
+        let message: String?
         
-        var distanceRemaining: Double {
-            max(0, totalDistance - currentDistance)
+        // Computed properties for countdown
+        var remainingTime: TimeInterval {
+            guard isCountdownActive,
+                  let startTime = countdownStartTime else {
+                return 0
+            }
+            
+            let elapsed = Date().timeIntervalSince(startTime)
+            return max(0, countdownDuration - elapsed)
+        }
+        
+        var isCountdownFinished: Bool {
+            return isCountdownActive && remainingTime <= 0
+        }
+        
+        var formattedRemainingTime: String {
+            let minutes = Int(remainingTime) / 60
+            let seconds = Int(remainingTime) % 60
+            return String(format: "%02d:%02d", minutes, seconds)
+        }
+        
+        var progressPercentage: Double {
+            guard countdownDuration > 0 else { return 0 }
+            let elapsed = countdownDuration - remainingTime
+            return (elapsed / countdownDuration) * 100
+        }
+        
+        // Location progress computed properties
+        var locationProgressPercentage: Double {
+            guard let current = currentDistance,
+                  let total = totalDistance,
+                  total > 0 else { return 0 }
+            
+            let traveled = total - current
+            return max(0, min(100, (traveled / total) * 100))
         }
         
         var formattedCurrentDistance: String {
-            if currentDistance < 1000 {
-                return "\(Int(currentDistance))m"
+            guard let distance = currentDistance else { return "Unknown" }
+            if distance < 1000 {
+                return String(format: "%.0f m", distance)
             } else {
-                return String(format: "%.1fkm", currentDistance / 1000)
+                return String(format: "%.1f km", distance / 1000)
             }
         }
         
-        var formattedRemainingDistance: String {
-            if distanceRemaining < 1000 {
-                return "\(Int(distanceRemaining))m"
-            } else {
-                return String(format: "%.1fkm", distanceRemaining / 1000)
+        var statusColor: String {
+            switch groupStatus {
+            case "going": return "blue"
+            case "stop": return "red"
+            case "rest": return "orange"
+            case "waiting": return "gray"
+            case "arrived": return "green"
+            default: return "gray"
             }
         }
     }
@@ -56,8 +123,7 @@ struct HitherGroupAttributes: ActivityAttributes {
     let groupName: String
     let groupId: String
     let userRole: String // "leader" or "follower"
-    let startLocationName: String
-    let destinationName: String
+    let activityType: String // "countdown", "navigation", etc.
 }
 
 // MARK: - Live Activity Widget
@@ -90,25 +156,34 @@ struct HitherGroupLiveActivity: Widget {
                 
                 DynamicIslandExpandedRegion(.trailing) {
                     VStack(alignment: .trailing, spacing: 2) {
-                        if context.state.isActive {
-                            HStack(spacing: 4) {
-                                Circle()
-                                    .fill(Color.green)
-                                    .frame(width: 6, height: 6)
-                                Text("Active")
-                                    .font(.caption2)
-                                    .foregroundColor(.green)
+                        if let distance = context.state.currentDistance {
+                            VStack(alignment: .trailing, spacing: 1) {
+                                Text(context.state.formattedCurrentDistance)
+                                    .font(.caption)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.blue)
+                                
+                                if let destination = context.state.destinationName {
+                                    Text("to \(destination)")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                } else {
+                                    Text("distance")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
                             }
-                        }
-                        
-                        if let batteryLevel = context.state.batteryLevel {
-                            HStack(spacing: 2) {
-                                Image(systemName: getBatteryIcon(level: batteryLevel))
-                                    .font(.caption2)
-                                    .foregroundColor(getBatteryColor(level: batteryLevel))
-                                Text("\(Int(batteryLevel * 100))%")
-                                    .font(.caption2)
-                                    .foregroundColor(getBatteryColor(level: batteryLevel))
+                        } else {
+                            VStack(alignment: .trailing, spacing: 1) {
+                                Text(context.state.groupStatus.capitalized)
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(getStatusColor(status: context.state.groupStatus))
+                                
+                                Circle()
+                                    .fill(getStatusColor(status: context.state.groupStatus))
+                                    .frame(width: 6, height: 6)
                             }
                         }
                     }
@@ -116,61 +191,84 @@ struct HitherGroupLiveActivity: Widget {
                 
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(spacing: 8) {
-                        // Progress bar
-                        VStack(spacing: 4) {
-                            HStack {
-                                Text(context.attributes.startLocationName)
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
+                        // Location progress if available
+                        if let _ = context.state.currentDistance, let _ = context.state.totalDistance {
+                            VStack(spacing: 4) {
+                                HStack {
+                                    Text("Progress to Destination")
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                    
+                                    Spacer()
+                                    
+                                    Text(context.state.formattedCurrentDistance)
+                                        .font(.title3)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(.blue)
+                                }
                                 
-                                Spacer()
-                                
-                                Text("\(Int(context.state.progressPercentage))%")
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                
-                                Spacer()
-                                
-                                Text(context.state.destinationName)
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
+                                ProgressView(value: context.state.locationProgressPercentage / 100.0)
+                                    .progressViewStyle(LinearProgressViewStyle(tint: .blue))
                             }
-                            
-                            ProgressView(value: context.state.progressPercentage / 100.0)
-                                .progressViewStyle(LinearProgressViewStyle(tint: .blue))
+                        } else if context.state.isCountdownActive {
+                            // Countdown progress
+                            VStack(spacing: 4) {
+                                HStack {
+                                    Text("Countdown Timer")
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                    
+                                    Spacer()
+                                    
+                                    Text(context.state.formattedRemainingTime)
+                                        .font(.title3)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(.orange)
+                                }
+                                
+                                ProgressView(value: context.state.progressPercentage / 100.0)
+                                    .progressViewStyle(LinearProgressViewStyle(tint: .orange))
+                            }
+                        } else {
+                            // Show group status and start button
+                            VStack(spacing: 6) {
+                                HStack {
+                                    Text("Status: \(context.state.groupStatus.capitalized)")
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(getStatusColor(status: context.state.groupStatus))
+                                    
+                                    Spacer()
+                                }
+                                
+                                Button(intent: StartCountdownIntent()) {
+                                    HStack {
+                                        Image(systemName: "timer")
+                                            .font(.caption)
+                                        
+                                        Text("Start 1-Minute Timer")
+                                            .font(.caption)
+                                            .fontWeight(.semibold)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 8)
+                                    .background(Color.blue)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(8)
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
                         
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Traveled")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                Text(context.state.formattedCurrentDistance)
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                            }
-                            
-                            Spacer()
-                            
-                            VStack(alignment: .trailing, spacing: 2) {
-                                Text("Remaining")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                Text(context.state.formattedRemainingDistance)
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                            }
-                        }
-                        
-                        if let command = context.state.lastCommand {
+                        if let message = context.state.message {
                             HStack {
-                                Image(systemName: "megaphone.fill")
-                                    .foregroundColor(.orange)
+                                Image(systemName: "info.circle")
+                                    .foregroundColor(.blue)
                                     .font(.caption2)
                                 
-                                Text(command)
+                                Text(message)
                                     .font(.caption2)
-                                    .foregroundColor(.orange)
+                                    .foregroundColor(.blue)
                                     .lineLimit(1)
                             }
                         }
@@ -183,14 +281,39 @@ struct HitherGroupLiveActivity: Widget {
                     .font(.caption)
                 
             } compactTrailing: {
-                VStack(spacing: 1) {
-                    Text("\(Int(context.state.progressPercentage))%")
-                        .font(.caption2)
-                        .fontWeight(.bold)
-                    
-                    Text(context.state.formattedRemainingDistance)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                if let distance = context.state.currentDistance {
+                    VStack(spacing: 1) {
+                        Text(context.state.formattedCurrentDistance)
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.blue)
+                        
+                        Text("away")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                } else if context.state.isCountdownActive {
+                    VStack(spacing: 1) {
+                        Text(context.state.formattedRemainingTime)
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.orange)
+                        
+                        Text("timer")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    VStack(spacing: 1) {
+                        Text(context.state.groupStatus)
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .foregroundColor(getStatusColor(status: context.state.groupStatus))
+                        
+                        Text("status")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
                 }
                 
             } minimal: {
@@ -223,6 +346,7 @@ struct HitherGroupLiveActivity: Widget {
             return .red
         }
     }
+    
 }
 
 // MARK: - Lock Screen View
@@ -250,15 +374,15 @@ struct LockScreenActivityView: View {
                     .foregroundColor(.secondary)
                     .lineLimit(1)
                 
-                if let command = context.state.lastCommand {
+                if let message = context.state.message {
                     HStack(spacing: 4) {
-                        Image(systemName: "megaphone.fill")
-                            .foregroundColor(.orange)
+                        Image(systemName: "info.circle.fill")
+                            .foregroundColor(.blue)
                             .font(.caption2)
                         
-                        Text("📢 \(command)")
+                        Text(message)
                             .font(.caption)
-                            .foregroundColor(.orange)
+                            .foregroundColor(.blue)
                             .lineLimit(1)
                     }
                 }
@@ -266,38 +390,61 @@ struct LockScreenActivityView: View {
             
             Spacer()
             
-            // Right side - Progress info
+            // Right side - Distance and status info
             VStack(alignment: .trailing, spacing: 4) {
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("\(Int(context.state.progressPercentage))%")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.blue)
-                    
-                    Text("Complete")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(context.state.formattedRemainingDistance)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                    
-                    Text("Remaining")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                if let distance = context.state.currentDistance {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(context.state.formattedCurrentDistance)
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.blue)
+                        
+                        if let destination = context.state.destinationName {
+                            Text("to \(destination)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        } else {
+                            Text("Distance")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                } else if context.state.isCountdownActive {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(context.state.formattedRemainingTime)
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.orange)
+                        
+                        Text("Time Left")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    Button(intent: StartCountdownIntent()) {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Image(systemName: "timer")
+                                .font(.title2)
+                                .foregroundColor(.blue)
+                            
+                            Text("Start Timer")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                        }
+                    }
+                    .buttonStyle(.plain)
                 }
                 
                 // Status indicator
                 HStack(spacing: 4) {
                     Circle()
-                        .fill(context.state.isActive ? Color.green : Color.red)
+                        .fill(getStatusColor(status: context.state.groupStatus))
                         .frame(width: 6, height: 6)
                     
-                    Text(context.state.isActive ? "Live" : "Paused")
+                    Text(context.state.groupStatus.capitalized)
                         .font(.caption2)
-                        .foregroundColor(context.state.isActive ? .green : .red)
+                        .foregroundColor(getStatusColor(status: context.state.groupStatus))
                 }
             }
         }
@@ -312,83 +459,98 @@ struct LockScreenActivityView: View {
 extension HitherGroupAttributes {
     fileprivate static var preview: HitherGroupAttributes {
         HitherGroupAttributes(
-            groupName: "Mountain Hike",
+            groupName: "Adventure Group",
             groupId: "preview-group-id",
             userRole: "follower",
-            startLocationName: "Trailhead",
-            destinationName: "Summit"
+            activityType: "countdown"
         )
     }
     
     fileprivate static var leaderPreview: HitherGroupAttributes {
         HitherGroupAttributes(
-            groupName: "City Tour",
+            groupName: "Team Alpha",
             groupId: "leader-group-id",
             userRole: "leader",
-            startLocationName: "Central Station",
-            destinationName: "Museum"
+            activityType: "countdown"
         )
     }
 }
 
 extension HitherGroupAttributes.ContentState {
-    fileprivate static var starting: HitherGroupAttributes.ContentState {
+    fileprivate static var waiting: HitherGroupAttributes.ContentState {
         HitherGroupAttributes.ContentState(
-            currentDistance: 250,
-            totalDistance: 5000,
-            progressPercentage: 5,
-            memberCount: 6,
+            currentDistance: nil,
+            totalDistance: nil,
+            destinationName: nil,
+            groupStatus: "waiting",
+            memberCount: 3,
             leaderName: "Alex",
-            currentLocationName: "Trailhead Parking",
-            destinationName: "Mountain Summit",
-            isActive: true,
-            lastCommand: "Let's go team!",
-            batteryLevel: 0.85
+            isCountdownActive: false,
+            countdownStartTime: nil,
+            countdownDuration: 60.0,
+            message: "Ready to start"
         )
     }
     
-    fileprivate static var midway: HitherGroupAttributes.ContentState {
+    fileprivate static var going: HitherGroupAttributes.ContentState {
         HitherGroupAttributes.ContentState(
-            currentDistance: 2500,
-            totalDistance: 5000,
-            progressPercentage: 50,
-            memberCount: 6,
+            currentDistance: 750.0,
+            totalDistance: 1500.0,
+            destinationName: "Central Park",
+            groupStatus: "going",
+            memberCount: 3,
             leaderName: "Alex",
-            currentLocationName: "Rest Stop",
-            destinationName: "Mountain Summit",
-            isActive: true,
-            lastCommand: "Take a 5-minute break",
-            batteryLevel: 0.45
+            isCountdownActive: false,
+            countdownStartTime: nil,
+            countdownDuration: 60.0,
+            message: "On our way"
         )
     }
     
-    fileprivate static var almostThere: HitherGroupAttributes.ContentState {
+    fileprivate static var rest: HitherGroupAttributes.ContentState {
         HitherGroupAttributes.ContentState(
-            currentDistance: 4200,
-            totalDistance: 5000,
-            progressPercentage: 84,
-            memberCount: 5,
+            currentDistance: 250.0,
+            totalDistance: 1500.0,
+            destinationName: "Museum",
+            groupStatus: "rest",
+            memberCount: 3,
             leaderName: "Alex",
-            currentLocationName: "Final Ascent",
-            destinationName: "Mountain Summit",
-            isActive: true,
-            lastCommand: "Almost there!",
-            batteryLevel: 0.25
+            isCountdownActive: false,
+            countdownStartTime: nil,
+            countdownDuration: 60.0,
+            message: "Taking a break"
+        )
+    }
+    
+    fileprivate static var countdown: HitherGroupAttributes.ContentState {
+        HitherGroupAttributes.ContentState(
+            currentDistance: 300.0,
+            totalDistance: 1500.0,
+            destinationName: "Restaurant",
+            groupStatus: "going",
+            memberCount: 3,
+            leaderName: "Alex",
+            isCountdownActive: true,
+            countdownStartTime: Date().addingTimeInterval(-30), // 30 seconds ago
+            countdownDuration: 60.0,
+            message: "Timer is running"
         )
     }
 }
 
-#Preview("Notification", as: .content, using: HitherGroupAttributes.preview) {
+#Preview("Navigation Activity", as: .content, using: HitherGroupAttributes.preview) {
    HitherGroupLiveActivity()
 } contentStates: {
-    HitherGroupAttributes.ContentState.starting
-    HitherGroupAttributes.ContentState.midway
-    HitherGroupAttributes.ContentState.almostThere
+    HitherGroupAttributes.ContentState.waiting
+    HitherGroupAttributes.ContentState.going
+    HitherGroupAttributes.ContentState.rest
+    HitherGroupAttributes.ContentState.countdown
 }
 
-#Preview("Leader Notification", as: .content, using: HitherGroupAttributes.leaderPreview) {
+#Preview("Leader Navigation", as: .content, using: HitherGroupAttributes.leaderPreview) {
    HitherGroupLiveActivity()
 } contentStates: {
-    HitherGroupAttributes.ContentState.starting
-    HitherGroupAttributes.ContentState.midway
+    HitherGroupAttributes.ContentState.waiting
+    HitherGroupAttributes.ContentState.going
+    HitherGroupAttributes.ContentState.countdown
 }

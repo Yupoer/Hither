@@ -11,7 +11,20 @@
       "WebFetch(domain:docs.anthropic.com)",
       "Bash(swift --version)",
       "Bash(swift:*)",
-      "Bash(open:*)"
+      "Bash(open:*)",
+      "WebFetch(domain:developer.apple.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(ls:*)",
+      "Bash(grep:*)",
+      "Bash(sed:*)",
+      "Bash(/dev/null)",
+      "Bash(xcrun xcodebuild:*)",
+      "Bash(xcode-select:*)",
+      "Bash(sudo xcode-select:*)",
+      "Bash(/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project Hither.xcodeproj -scheme Hither -destination 'platform=iOS Simulator,name=iPhone 16 Pro' build)",
+      "Bash(cat:*)",
+      "mcp__sequential-thinking__sequentialthinking",
+      "mcp__ide__getDiagnostics"
     ],
     "deny": []
   },

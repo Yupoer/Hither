@@ -19,13 +19,13 @@ enum WaypointType: String, CaseIterable, Codable {
     
     var displayName: String {
         switch self {
-        case .meetingPoint: return "Meeting Point"
-        case .restStop: return "Rest Stop"
-        case .lunch: return "Lunch Spot"
-        case .destination: return "Destination"
-        case .checkpoint: return "Checkpoint"
-        case .emergency: return "Emergency"
-        case .custom: return "Custom"
+        case .meetingPoint: return "waypoint_meeting_point".localized
+        case .restStop: return "waypoint_rest_stop".localized
+        case .lunch: return "waypoint_lunch".localized
+        case .destination: return "waypoint_destination".localized
+        case .checkpoint: return "waypoint_checkpoint".localized
+        case .emergency: return "waypoint_emergency".localized
+        case .custom: return "waypoint_custom".localized
         }
     }
     
@@ -157,6 +157,10 @@ struct GroupItinerary: Identifiable, Codable {
     
     var activeWaypoints: [Waypoint] {
         waypoints.filter { $0.isActive && !$0.isCompleted }.sorted { $0.order < $1.order }
+    }
+    
+    var upcomingWaypoints: [Waypoint] {
+        waypoints.filter { $0.isActive && !$0.isCompleted && !$0.isInProgress }.sorted { $0.order < $1.order }
     }
     
     var nextWaypoint: Waypoint? {

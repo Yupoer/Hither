@@ -23,6 +23,14 @@ class LocationService: NSObject, ObservableObject {
     private var userId: String?
     private var locationUpdateTimer: Timer?
     
+    // Live Activity destination monitoring
+    var activeDestination: CLLocationCoordinate2D?
+    var activeDestinationName: String?
+    var onDestinationReached: (() -> Void)?
+    private let destinationThreshold: CLLocationDistance = 10.0 // 10 meters
+    private var initialDistance: CLLocationDistance?
+    private var liveActivityUpdateCallback: ((CLLocationDistance, CLLocationDistance?) -> Void)?
+    
     override init() {
         super.init()
         setupLocationManager()
@@ -52,6 +60,23 @@ class LocationService: NSObject, ObservableObject {
             break
         @unknown default:
             break
+        }
+    }
+    
+    func preloadLocationServices() {
+        // Initialize location services early for better performance
+        requestLocationPermission()
+        
+        if authorizationStatus == .authorizedAlways || authorizationStatus == .authorizedWhenInUse {
+            // Start location updates without full tracking setup
+            locationManager.startUpdatingLocation()
+            
+            // Stop after getting initial location to save battery
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+                if !self.isTracking {
+                    self.locationManager.stopUpdatingLocation()
+                }
+            }
         }
     }
     
@@ -170,18 +195,15 @@ class LocationService: NSObject, ObservableObject {
         let geoPoint = GeoPoint(from: location.coordinate)
         
         do {
-            // Use setData with merge to create or update member location
-            try await db.collection("groups").document(groupId).setData([
-                "members": [
-                    userId: [
-                        "location": [
-                            "latitude": geoPoint.latitude,
-                            "longitude": geoPoint.longitude
-                        ],
-                        "lastLocationUpdate": Timestamp(date: Date())
-                    ]
-                ]
-            ], merge: true)
+            // Update user location in groups/{groupId}/users/{userId} subcollection
+            try await db.collection("groups").document(groupId)
+                .collection("users").document(userId).updateData([
+                    "location": [
+                        "latitude": geoPoint.latitude,
+                        "longitude": geoPoint.longitude
+                    ],
+                    "lastLocationUpdate": Timestamp(date: Date())
+                ])
         } catch {
             errorMessage = "Failed to sync location: \(error.localizedDescription)"
         }
@@ -214,12 +236,74 @@ class LocationService: NSObject, ObservableObject {
         let bearing = atan2(y, x) * 180 / .pi
         return bearing >= 0 ? bearing : bearing + 360
     }
+    
+    // MARK: - Live Activity Destination Monitoring
+    
+    func startDestinationMonitoring(
+        destination: CLLocationCoordinate2D,
+        destinationName: String,
+        onReached: @escaping () -> Void,
+        onProgressUpdate: ((CLLocationDistance, CLLocationDistance?) -> Void)? = nil
+    ) {
+        activeDestination = destination
+        activeDestinationName = destinationName
+        onDestinationReached = onReached
+        liveActivityUpdateCallback = onProgressUpdate
+        
+        // Calculate initial distance
+        if let currentLocation = currentLocation {
+            let destinationLocation = CLLocation(latitude: destination.latitude, longitude: destination.longitude)
+            initialDistance = currentLocation.distance(from: destinationLocation)
+        }
+        
+        print("🎯 Started monitoring destination: \(destinationName)")
+        
+        // Check immediately if already within threshold
+        if let currentLocation = currentLocation {
+            checkDestinationProximity(at: currentLocation)
+        }
+    }
+    
+    func stopDestinationMonitoring() {
+        activeDestination = nil
+        activeDestinationName = nil
+        onDestinationReached = nil
+        liveActivityUpdateCallback = nil
+        initialDistance = nil
+        
+        print("⏹️ Stopped destination monitoring")
+    }
+    
+    private func checkDestinationProximity(at location: CLLocation) {
+        guard let destination = activeDestination,
+              let destinationName = activeDestinationName,
+              let onReached = onDestinationReached else { return }
+        
+        let destinationLocation = CLLocation(latitude: destination.latitude, longitude: destination.longitude)
+        let distance = location.distance(from: destinationLocation)
+        
+        print("📍 Distance to \(destinationName): \(String(format: "%.1f", distance))m")
+        
+        // Update Live Activity progress if callback is available
+        liveActivityUpdateCallback?(distance, initialDistance)
+        
+        if distance <= destinationThreshold {
+            print("🎯 Destination reached! Distance: \(String(format: "%.1f", distance))m")
+            
+            // Clear monitoring before calling callback to prevent re-triggering
+            stopDestinationMonitoring()
+            onReached()
+        }
+    }
 }
 
 extension LocationService: CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
         currentLocation = location
+        
+        // Check destination proximity for Live Activity
+        checkDestinationProximity(at: location)
         
         // Sync to Firestore when tracking and location changes significantly
         if isTracking {

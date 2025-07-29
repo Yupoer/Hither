@@ -14,6 +14,7 @@ struct WaypointCard: View {
     let isLeader: Bool
     let onTap: () -> Void
     let onComplete: (() -> Void)?
+    let onDelete: (() -> Void)?
     
     var body: some View {
         Button(action: onTap) {
@@ -79,6 +80,13 @@ struct WaypointCard: View {
             .shadow(color: .gray.opacity(0.2), radius: 2, x: 0, y: 1)
         }
         .buttonStyle(PlainButtonStyle())
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if isLeader, let onDelete = onDelete {
+                Button(role: .destructive, action: onDelete) {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
+        }
     }
     
     private func getTypeColor() -> Color {

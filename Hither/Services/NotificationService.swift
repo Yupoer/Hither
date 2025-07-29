@@ -8,6 +8,7 @@
 import Foundation
 import UserNotifications
 import UIKit
+import FirebaseFirestore
 
 @MainActor
 class NotificationService: NSObject, ObservableObject {
@@ -54,9 +55,20 @@ class NotificationService: NSObject, ObservableObject {
     
     func scheduleCommandNotification(
         command: GroupCommand,
-        groupName: String
+        groupName: String,
+        recipientId: String? = nil
     ) async {
-        guard isEnabled else { return }
+        guard isEnabled else { 
+            print("📱 Notifications not enabled - permission may be denied")
+            return 
+        }
+        
+        // Check if notification permissions are properly granted
+        let settings = await notificationCenter.notificationSettings()
+        guard settings.authorizationStatus == .authorized else {
+            print("❌ Notification authorization not granted: \(settings.authorizationStatus)")
+            return
+        }
         
         let content = UNMutableNotificationContent()
         content.title = "📢 Group Command"
@@ -71,19 +83,22 @@ class NotificationService: NSObject, ObservableObject {
             "groupId": command.groupId,
             "groupName": groupName,
             "type": command.type.rawValue,
-            "senderId": command.senderId
+            "senderId": command.senderId,
+            "recipientId": recipientId ?? ""
         ]
         
         let request = UNNotificationRequest(
-            identifier: "command_\(command.id)",
+            identifier: "command_\(command.id)_\(recipientId ?? "all")",
             content: content,
             trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
         )
         
         do {
             try await notificationCenter.add(request)
+            print("✅ Scheduled command notification for recipient: \(recipientId ?? "current user")")
         } catch {
             errorMessage = "Failed to schedule command notification: \(error.localizedDescription)"
+            print("❌ Failed to schedule notification: \(error)")
         }
     }
     
@@ -248,6 +263,7 @@ class NotificationService: NSObject, ObservableObject {
         notificationCenter.removePendingNotificationRequests(withIdentifiers: identifiers)
         notificationCenter.removeDeliveredNotifications(withIdentifiers: identifiers)
     }
+    
 }
 
 // MARK: - UNUserNotificationCenterDelegate
@@ -321,3 +337,4 @@ enum LocationAlertType: String, CaseIterable {
     case groupScattered = "group_scattered"
     case batteryLow = "battery_low"
 }
+

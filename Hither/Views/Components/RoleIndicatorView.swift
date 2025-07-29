@@ -92,7 +92,7 @@ struct QuickActionButton: View {
     
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 8) {
+            VStack(spacing: 6) {
                 Image(systemName: icon)
                     .font(.title2)
                     .foregroundColor(.white)
@@ -102,13 +102,14 @@ struct QuickActionButton: View {
                     .fontWeight(.medium)
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)
+                    .lineLimit(2)
             }
-            .frame(width: 80, height: 80)
+            .frame(minWidth: 70, maxWidth: .infinity, minHeight: 70, maxHeight: 70)
             .background(color)
             .cornerRadius(12)
             .shadow(color: color.opacity(0.3), radius: 4, x: 0, y: 2)
         }
-        .buttonStyle(QuickActionButtonStyle())
+        .buttonStyle(PlainButtonStyle())
     }
 }
 
@@ -123,14 +124,29 @@ struct QuickActionButtonStyle: ButtonStyle {
 struct GroupHeaderView: View {
     let group: HitherGroup
     let currentUser: HitherUser
+    @State private var showingEditGroupNameSheet = false
     
     var body: some View {
         VStack(spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(group.name)
-                        .font(.title2)
-                        .fontWeight(.semibold)
+                    HStack {
+                        Text(group.name)
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                        
+                        // Edit group name button (Leader only)
+                        if group.leader?.userId == currentUser.id {
+                            Button(action: {
+                                showingEditGroupNameSheet = true
+                            }) {
+                                Image(systemName: "pencil.circle.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.blue)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
                     
                     Text("\(group.members.count) members")
                         .font(.subheadline)
@@ -162,5 +178,75 @@ struct GroupHeaderView: View {
         .padding()
         .background(Color.gray.opacity(0.05))
         .cornerRadius(12)
+        .sheet(isPresented: $showingEditGroupNameSheet) {
+            EditGroupNameSheet(group: group)
+        }
+    }
+}
+
+struct EditGroupNameSheet: View {
+    let group: HitherGroup
+    @Environment(\.presentationMode) var presentationMode
+    @State private var newGroupName = ""
+    @State private var isLoading = false
+    @State private var errorMessage: String?
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 24) {
+                VStack(spacing: 8) {
+                    Text("Edit Group Name")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                    
+                    Text("Update the name for this group")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Group Name")
+                        .font(.headline)
+                    
+                    TextField("Enter group name", text: $newGroupName)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .onAppear {
+                            newGroupName = group.name
+                        }
+                }
+                
+                if let errorMessage = errorMessage {
+                    Text(errorMessage)
+                        .foregroundColor(.red)
+                        .font(.caption)
+                }
+                
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Edit Group Name")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Save") {
+                        saveGroupName()
+                    }
+                    .disabled(newGroupName.isEmpty || isLoading)
+                }
+            }
+        }
+    }
+    
+    private func saveGroupName() {
+        // TODO: Implement group name update functionality
+        // This would require adding a method to GroupService
+        presentationMode.wrappedValue.dismiss()
     }
 }

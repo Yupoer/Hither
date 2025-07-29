@@ -7,6 +7,7 @@
 
 import SwiftUI
 import CoreLocation
+import UserNotifications
 
 struct CommandsView: View {
     @EnvironmentObject private var groupService: GroupService
@@ -36,7 +37,7 @@ struct CommandsView: View {
                 // Command history for both roles
                 commandHistorySection()
             }
-            .navigationTitle("Commands")
+            .navigationTitle("commands".localized)
             .onAppear {
                 setupCommandService()
                 setupNotifications()
@@ -50,12 +51,12 @@ struct CommandsView: View {
     @ViewBuilder
     private func leaderCommandInterface(group: HitherGroup, user: HitherUser) -> some View {
         VStack(spacing: 16) {
-            Text("Send Commands to Group")
+            Text("send_commands_to_group".localized)
                 .font(.headline)
                 .padding(.top)
             
             LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 12) {
-                ForEach(CommandType.allCases.filter { $0 != .custom }, id: \.self) { commandType in
+                ForEach(CommandType.leaderCommands.filter { $0 != .custom }, id: \.self) { commandType in
                     CommandButton(
                         type: commandType,
                         action: {
@@ -92,7 +93,7 @@ struct CommandsView: View {
             .padding(.horizontal)
             
             if commandService.isLoading {
-                ProgressView("Sending command...")
+                SheepLoadingView(message: "sending_command".localized)
                     .padding()
             }
             
@@ -109,20 +110,60 @@ struct CommandsView: View {
     @ViewBuilder
     private func followerCommandInterface() -> some View {
         VStack(spacing: 16) {
-            VStack(spacing: 8) {
-                Image(systemName: "ear")
-                    .font(.system(size: 40))
-                    .foregroundColor(.blue)
+            Text("send_requests_to_leader".localized)
+                .font(.headline)
+                .padding(.top)
+            
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 12) {
+                ForEach(CommandType.followerRequests, id: \.self) { commandType in
+                    CommandButton(
+                        type: commandType,
+                        action: {
+                            Task {
+                                guard let group = groupService.currentGroup,
+                                      let user = authService.currentUser else { return }
+                                await sendQuickCommand(
+                                    type: commandType,
+                                    group: group,
+                                    user: user
+                                )
+                            }
+                        }
+                    )
+                }
                 
-                Text("Listening for Commands")
-                    .font(.headline)
-                
-                Text("You'll receive notifications when your leader sends commands")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
+                // Custom request button
+                Button(action: {
+                    showingCustomMessageSheet = true
+                }) {
+                    VStack(spacing: 8) {
+                        Image(systemName: CommandType.custom.icon)
+                            .font(.title2)
+                        
+                        Text("custom_request".localized)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                    }
+                    .frame(height: 60)
+                    .frame(maxWidth: .infinity)
+                    .background(Color.orange)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
+                }
             }
-            .padding()
+            .padding(.horizontal)
+            
+            if commandService.isLoading {
+                SheepLoadingView(message: "sending_request".localized)
+                    .padding()
+            }
+            
+            if let errorMessage = commandService.errorMessage {
+                Text(errorMessage)
+                    .foregroundColor(.red)
+                    .font(.caption)
+                    .padding(.horizontal)
+            }
         }
         .padding(.bottom)
     }
@@ -131,7 +172,7 @@ struct CommandsView: View {
     private func commandHistorySection() -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Recent Commands")
+                Text("recent_commands".localized)
                     .font(.headline)
                 
                 Spacer()
@@ -154,7 +195,7 @@ struct CommandsView: View {
                         .font(.system(size: 40))
                         .foregroundColor(.gray)
                     
-                    Text("No commands yet")
+                    Text("no_commands_yet".localized)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -175,19 +216,21 @@ struct CommandsView: View {
     
     @ViewBuilder
     private func customMessageSheet() -> some View {
+        let isLeader = groupService.currentGroup?.leader?.userId == authService.currentUser?.id
+        
         NavigationView {
             VStack(spacing: 20) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Custom Message")
+                    Text(isLeader ? "custom_command".localized : "custom_request".localized)
                         .font(.headline)
                     
-                    Text("Send a custom message to all group members")
+                    Text(isLeader ? "send_custom_command_subtitle".localized : "send_custom_request_subtitle".localized)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 
-                TextField("Enter your message...", text: $customMessage, axis: .vertical)
+                TextField(isLeader ? "enter_command_placeholder".localized : "enter_request_placeholder".localized, text: $customMessage, axis: .vertical)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .lineLimit(3...6)
                 
@@ -201,6 +244,7 @@ struct CommandsView: View {
                         await commandService.sendCustomCommand(
                             message: customMessage,
                             groupId: group.id,
+                            groupName: group.name,
                             senderId: user.id,
                             senderName: user.displayName,
                             currentLocation: getCurrentLocation()
@@ -210,20 +254,20 @@ struct CommandsView: View {
                         showingCustomMessageSheet = false
                     }
                 }) {
-                    Text("Send Message")
+                    Text(isLeader ? "send_command".localized : "send_request".localized)
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(customMessage.isEmpty ? Color.gray : Color.blue)
+                        .background(customMessage.isEmpty ? Color.gray : (isLeader ? Color.blue : Color.orange))
                         .foregroundColor(.white)
                         .cornerRadius(8)
                 }
                 .disabled(customMessage.isEmpty || commandService.isLoading)
             }
             .padding()
-            .navigationTitle("Custom Message")
+            .navigationTitle(isLeader ? "custom_command".localized : "custom_request".localized)
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarItems(
-                leading: Button("Cancel") {
+                leading: Button("cancel".localized) {
                     showingCustomMessageSheet = false
                     customMessage = ""
                 }
@@ -232,13 +276,24 @@ struct CommandsView: View {
     }
     
     private func setupCommandService() {
-        guard let group = groupService.currentGroup else { return }
+        guard let group = groupService.currentGroup,
+              let user = authService.currentUser else { return }
         commandService.startListeningToCommands(groupId: group.id)
+        commandService.startListeningToNotifications(groupId: group.id, userId: user.id)
     }
     
     private func setupNotifications() {
+        commandService.setupNotificationCategories()
         Task {
             await commandService.requestNotificationPermission()
+            
+            // Debug: Check notification permission status
+            let settings = await UNUserNotificationCenter.current().notificationSettings()
+            print("🔔 Notification permission status: \(settings.authorizationStatus)")
+            
+            if settings.authorizationStatus != .authorized {
+                print("⚠️ Notifications not authorized - followers may not receive command notifications")
+            }
         }
     }
     
@@ -246,6 +301,7 @@ struct CommandsView: View {
         await commandService.sendQuickCommand(
             type: type,
             groupId: group.id,
+            groupName: group.name,
             senderId: user.id,
             senderName: user.displayName,
             currentLocation: getCurrentLocation()
@@ -282,6 +338,7 @@ struct CommandButton: View {
     
     private func getBackgroundColor() -> Color {
         switch type {
+        // Leader commands
         case .gather: return .blue
         case .depart: return .green
         case .rest: return .orange
@@ -290,12 +347,19 @@ struct CommandButton: View {
         case .stop: return .red
         case .hurryUp: return .yellow
         case .custom: return .gray
+        
+        // Follower requests - use orange/yellow tones
+        case .needRestroom: return .orange
+        case .needBreak: return .yellow
+        case .needHelp: return .red
+        case .foundSomething: return .green
         }
     }
 }
 
 struct CommandHistoryCard: View {
     let command: GroupCommand
+    @State private var currentTime = Date()
     
     var body: some View {
         HStack(spacing: 12) {
@@ -339,10 +403,17 @@ struct CommandHistoryCard: View {
         .padding()
         .background(Color.gray.opacity(0.05))
         .cornerRadius(8)
+        .onAppear {
+            currentTime = Date()
+        }
+        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
+            currentTime = Date()
+        }
     }
     
     private func getIconColor() -> Color {
         switch command.type {
+        // Leader commands
         case .gather: return .blue
         case .depart: return .green
         case .rest: return .orange
@@ -351,6 +422,12 @@ struct CommandHistoryCard: View {
         case .stop: return .red
         case .hurryUp: return .yellow
         case .custom: return .gray
+        
+        // Follower requests
+        case .needRestroom: return .orange
+        case .needBreak: return .yellow
+        case .needHelp: return .red
+        case .foundSomething: return .green
         }
     }
     
@@ -360,9 +437,9 @@ struct CommandHistoryCard: View {
         let timeInterval = now.timeIntervalSince(timestamp)
         
         if timeInterval < 60 {
-            return "Now"
+            return "now".localized
         } else if timeInterval < 3600 {
-            return "\(Int(timeInterval / 60))m ago"
+            return String(format: "minutes_ago_simple".localized, Int(timeInterval / 60))
         } else if Calendar.current.isDate(timestamp, inSameDayAs: now) {
             formatter.dateFormat = "HH:mm"
             return formatter.string(from: timestamp)

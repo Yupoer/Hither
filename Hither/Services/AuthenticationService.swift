@@ -15,7 +15,7 @@ import GoogleSignIn
 class AuthenticationService: ObservableObject {
     @Published var currentUser: HitherUser?
     @Published var isAuthenticated = false
-    @Published var isLoading = false
+    @Published var isLoading = true
     @Published var errorMessage: String?
     
     private var authStateListenerHandle: AuthStateDidChangeListenerHandle?
@@ -31,10 +31,21 @@ class AuthenticationService: ObservableObject {
     }
     
     private func setupAuthStateListener() {
+        let startTime = Date()
+        
         authStateListenerHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
             Task { @MainActor in
+                // Ensure minimum loading time of 1.5 seconds for smooth UX
+                let elapsedTime = Date().timeIntervalSince(startTime)
+                let minimumLoadingTime: TimeInterval = 1.5
+                
+                if elapsedTime < minimumLoadingTime {
+                    try? await Task.sleep(nanoseconds: UInt64((minimumLoadingTime - elapsedTime) * 1_000_000_000))
+                }
+                
                 if let user = user {
-                    self?.currentUser = HitherUser(from: user)
+                    let hitherUser = HitherUser(from: user)
+                    self?.currentUser = hitherUser
                     self?.isAuthenticated = true
                 } else {
                     self?.currentUser = nil
@@ -68,30 +79,52 @@ class AuthenticationService: ObservableObject {
         isLoading = true
         errorMessage = nil
         
-        guard let windowScene = await UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let presentingViewController = await windowScene.windows.first?.rootViewController else {
-            errorMessage = "Unable to get presenting view controller"
+        print("🔍 Starting Google Sign-In...")
+        
+        // Check if Google Sign-In is configured
+        guard GIDSignIn.sharedInstance.configuration != nil else {
+            errorMessage = "Google Sign-In not configured"
+            print("❌ Google Sign-In configuration is nil")
             isLoading = false
             return
         }
         
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let presentingViewController = windowScene.windows.first?.rootViewController else {
+            errorMessage = "Unable to get presenting view controller"
+            print("❌ Unable to get presenting view controller")
+            isLoading = false
+            return
+        }
+        
+        print("🔍 Found presenting view controller: \(presentingViewController)")
+        
         do {
+            print("🔍 Attempting Google Sign-In...")
             let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presentingViewController)
+            print("🔍 Google Sign-In result received")
             
             guard let idToken = result.user.idToken?.tokenString else {
                 errorMessage = "Failed to get Google ID token"
+                print("❌ Failed to get Google ID token")
                 isLoading = false
                 return
             }
             
+            print("🔍 Got Google ID token")
+            
             let accessToken = result.user.accessToken.tokenString
             let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
             
+            print("🔍 Attempting Firebase authentication...")
             let authResult = try await Auth.auth().signIn(with: credential)
+            print("✅ Firebase authentication successful")
+            
             currentUser = HitherUser(from: authResult.user)
             isAuthenticated = true
             
         } catch {
+            print("❌ Google Sign-In error: \(error)")
             errorMessage = "Google Sign-In failed: \(error.localizedDescription)"
         }
         

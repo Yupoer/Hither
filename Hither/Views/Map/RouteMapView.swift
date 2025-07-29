@@ -15,6 +15,7 @@ struct RouteMapView: UIViewRepresentable {
     let annotations: [MapViewAnnotationItem]
     let currentRoute: MKRoute?
     let userLocation: CLLocation?
+    let onRegionChange: ((MKCoordinateRegion) -> Void)?
     
     func makeUIView(context: Context) -> MKMapView {
         let mapView = MKMapView()
@@ -35,19 +36,39 @@ struct RouteMapView: UIViewRepresentable {
             mapView.setRegion(region, animated: true)
         }
         
-        // Update annotations
+        // Update annotations with better comparison to avoid flashing
         let existingAnnotations = mapView.annotations.compactMap { $0 as? RouteMapAnnotation }
-        let newAnnotationIds = Set(annotations.map { $0.id })
-        let existingAnnotationIds = Set(existingAnnotations.map { $0.id })
+        let newAnnotationMap = Dictionary(uniqueKeysWithValues: annotations.map { ($0.id, $0) })
+        let existingAnnotationMap = Dictionary(uniqueKeysWithValues: existingAnnotations.map { ($0.id, $0) })
         
         // Remove annotations that are no longer needed
-        let annotationsToRemove = existingAnnotations.filter { !newAnnotationIds.contains($0.id) }
-        mapView.removeAnnotations(annotationsToRemove)
+        let annotationsToRemove = existingAnnotations.filter { !newAnnotationMap.keys.contains($0.id) }
+        if !annotationsToRemove.isEmpty {
+            mapView.removeAnnotations(annotationsToRemove)
+        }
         
-        // Add new annotations
-        let annotationsToAdd = annotations.filter { !existingAnnotationIds.contains($0.id) }
-        let mapAnnotations = annotationsToAdd.map { RouteMapAnnotation(from: $0) }
-        mapView.addAnnotations(mapAnnotations)
+        // Add new annotations (only truly new ones)
+        let annotationsToAdd = annotations.filter { !existingAnnotationMap.keys.contains($0.id) }
+        if !annotationsToAdd.isEmpty {
+            let mapAnnotations = annotationsToAdd.map { RouteMapAnnotation(from: $0) }
+            mapView.addAnnotations(mapAnnotations)
+        }
+        
+        // Update existing annotations with new data if their coordinates changed
+        for existingAnnotation in existingAnnotations {
+            if let newAnnotationItem = newAnnotationMap[existingAnnotation.id] {
+                let newCoordinate = newAnnotationItem.coordinate
+                let currentCoordinate = existingAnnotation.coordinate
+                
+                // Only update if coordinates have changed significantly
+                if !currentCoordinate.isEqual(to: newCoordinate, tolerance: 0.00001) {
+                    // Remove and re-add annotation with new coordinate for smooth update
+                    mapView.removeAnnotation(existingAnnotation)
+                    let updatedAnnotation = RouteMapAnnotation(from: newAnnotationItem)
+                    mapView.addAnnotation(updatedAnnotation)
+                }
+            }
+        }
         
         // Update route overlay
         context.coordinator.updateRoute(mapView: mapView, route: currentRoute)
@@ -95,18 +116,28 @@ struct RouteMapView: UIViewRepresentable {
                 annotationView?.canShowCallout = true
             } else {
                 annotationView?.annotation = annotation
+                // Clear previous subviews to avoid accumulation
+                annotationView?.subviews.forEach { $0.removeFromSuperview() }
             }
             
-            // Create custom view based on annotation type
-            if mapAnnotation.isMember {
+            // Always create fresh content to ensure it's up to date
+            if mapAnnotation.isRouteEndpoint {
+                let endpointView = RouteEndpointAnnotationView(type: mapAnnotation.routeEndpointType ?? .start)
+                let hostingController = UIHostingController(rootView: endpointView)
+                hostingController.view.backgroundColor = UIColor.clear
+                annotationView?.addSubview(hostingController.view)
+                
+                // Set frame
+                hostingController.view.frame = CGRect(x: -15, y: -15, width: 30, height: 30)
+            } else if mapAnnotation.isMember {
                 if let member = mapAnnotation.member {
                     let memberView = MemberAnnotationView(member: member)
                     let hostingController = UIHostingController(rootView: memberView)
                     hostingController.view.backgroundColor = UIColor.clear
                     annotationView?.addSubview(hostingController.view)
                     
-                    // Set frame
-                    hostingController.view.frame = CGRect(x: -20, y: -30, width: 40, height: 60)
+                    // Set frame for text annotation with spacer
+                    hostingController.view.frame = CGRect(x: -30, y: -5, width: 60, height: 40)
                 }
             } else {
                 if let waypoint = mapAnnotation.waypoint {
@@ -115,8 +146,8 @@ struct RouteMapView: UIViewRepresentable {
                     hostingController.view.backgroundColor = UIColor.clear
                     annotationView?.addSubview(hostingController.view)
                     
-                    // Set frame
-                    hostingController.view.frame = CGRect(x: -25, y: -35, width: 50, height: 70)
+                    // Set frame for text annotation with spacer
+                    hostingController.view.frame = CGRect(x: -40, y: -5, width: 80, height: 40)
                 }
             }
             
@@ -127,12 +158,18 @@ struct RouteMapView: UIViewRepresentable {
             if let polyline = overlay as? MKPolyline {
                 let renderer = MKPolylineRenderer(polyline: polyline)
                 renderer.strokeColor = UIColor.systemBlue
-                renderer.lineWidth = 4.0
+                renderer.lineWidth = 5.0
                 renderer.lineCap = .round
                 renderer.lineJoin = .round
+                renderer.alpha = 0.8
                 return renderer
             }
             return MKOverlayRenderer()
+        }
+        
+        func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            // Notify parent about region changes so it can handle user interaction
+            parent.onRegionChange?(mapView.region)
         }
     }
 }
@@ -143,9 +180,13 @@ class RouteMapAnnotation: NSObject, MKAnnotation {
     let member: GroupMember?
     let waypoint: Waypoint?
     let isMember: Bool
+    let isRouteEndpoint: Bool
+    let routeEndpointType: RouteEndpointType?
     
     var title: String? {
-        if isMember {
+        if isRouteEndpoint {
+            return routeEndpointType == .start ? "Start" : "End"
+        } else if isMember {
             return member?.displayName
         } else {
             return waypoint?.name
@@ -158,6 +199,8 @@ class RouteMapAnnotation: NSObject, MKAnnotation {
         self.member = item.member
         self.waypoint = item.waypoint
         self.isMember = item.isMember
+        self.isRouteEndpoint = item.isRouteEndpoint
+        self.routeEndpointType = item.routeEndpointType
         super.init()
     }
 }

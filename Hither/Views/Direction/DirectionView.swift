@@ -41,13 +41,13 @@ struct DirectionView: View {
                     
                 } else {
                     // No group or no leader
-                    Text("Join a group to see directions")
+                    Text("join_group_to_see_directions".localized)
                         .foregroundColor(.secondary)
                         .font(.title2)
                 }
             }
             .padding()
-            .navigationTitle("Direction")
+            .navigationTitle("direction".localized)
             .onAppear {
                 setupLocationTracking()
                 updateLeaderLocation()
@@ -93,7 +93,7 @@ struct DirectionView: View {
                         .fontWeight(.bold)
                         .foregroundColor(.primary)
                     
-                    Text("to \(leader.displayName)")
+                    Text(String(format: "to_leader".localized, leader.displayName))
                         .font(.headline)
                         .foregroundColor(.secondary)
                     
@@ -106,10 +106,10 @@ struct DirectionView: View {
             // Precision Finding section
             if directionService.isNearbyInteractionAvailable {
                 VStack(spacing: 12) {
-                    Text("Precision Finding")
+                    Text("precision_finding".localized)
                         .font(.headline)
                     
-                    Text("Get exact direction when within 50 meters")
+                    Text("precision_finding_description".localized)
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
@@ -119,7 +119,7 @@ struct DirectionView: View {
                     }) {
                         HStack {
                             Image(systemName: isPrecisionFindingActive ? "dot.radiowaves.left.and.right" : "dot.radiowaves.forward")
-                            Text(isPrecisionFindingActive ? "Stop Precision Finding" : "Start Precision Finding")
+                            Text(isPrecisionFindingActive ? "stop_precision_finding".localized : "start_precision_finding".localized)
                         }
                         .padding()
                         .background(isPrecisionFindingActive ? Color.red : Color.blue)
@@ -139,7 +139,7 @@ struct DirectionView: View {
                         .fill(locationService.isTracking ? Color.green : Color.red)
                         .frame(width: 8, height: 8)
                     
-                    Text(locationService.isTracking ? "Location Active" : "Location Inactive")
+                    Text(locationService.isTracking ? "location_active".localized : "location_inactive".localized)
                         .font(.caption)
                         .foregroundColor(locationService.isTracking ? .green : .red)
                     
@@ -151,7 +151,7 @@ struct DirectionView: View {
                                 .fill(Color.blue)
                                 .frame(width: 8, height: 8)
                             
-                            Text("Precision Mode")
+                            Text("precision_mode".localized)
                                 .font(.caption)
                                 .foregroundColor(.blue)
                         }
@@ -174,11 +174,11 @@ struct DirectionView: View {
     @ViewBuilder
     private func leaderDirectionView(group: HitherGroup) -> some View {
         VStack(spacing: 20) {
-            Text("Team Overview")
+            Text("team_overview".localized)
                 .font(.title2)
                 .fontWeight(.semibold)
             
-            Text("You are the leader - monitor your team below")
+            Text("leader_monitor_message".localized)
                 .font(.subheadline)
                 .foregroundColor(.secondary)
             
@@ -198,11 +198,11 @@ struct DirectionView: View {
                         .font(.system(size: 50))
                         .foregroundColor(.gray)
                     
-                    Text("No followers yet")
+                    Text("no_followers_yet".localized)
                         .font(.headline)
                         .foregroundColor(.secondary)
                     
-                    Text("Share your invite code to add team members")
+                    Text("share_invite_code_message".localized)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
@@ -268,11 +268,11 @@ struct FollowerStatusCard: View {
                 
                 if let location = follower.location,
                    let distance = locationService.calculateDistance(to: location.coordinate) {
-                    Text("\(Int(distance))m away")
+                    Text(String(format: "meters_away".localized, Int(distance)))
                         .font(.caption)
                         .foregroundColor(.secondary)
                 } else {
-                    Text("Location unknown")
+                    Text("location_unknown".localized)
                         .font(.caption)
                         .foregroundColor(.red)
                 }
@@ -310,15 +310,15 @@ struct FollowerStatusCard: View {
     }
     
     private func getStatusText() -> String {
-        guard let lastUpdate = follower.lastLocationUpdate else { return "No data" }
+        guard let lastUpdate = follower.lastLocationUpdate else { return "no_data".localized }
         let timeSinceUpdate = Date().timeIntervalSince(lastUpdate)
         
         if timeSinceUpdate < 60 {
-            return "Live"
+            return "live_status".localized
         } else if timeSinceUpdate < 300 {
-            return "\(Int(timeSinceUpdate / 60))m ago"
+            return String(format: "minutes_ago".localized, Int(timeSinceUpdate / 60))
         } else {
-            return "Stale"
+            return "stale_status".localized
         }
     }
 }
