@@ -46,7 +46,7 @@
 "select_avatar" = "選擇頭像";
 "remove_avatar" = "移除";
 "edit_nickname_title" = "編輯暱稱";
-"start_live_activity" = "開始即時活動";
+"start_live_activity" = "開啟即時動態";
 "leave_group" = "離開群組";
 "no_group_found" = "未找到群組";
 "leave_group_confirmation" = "您確定要離開此群組嗎？此操作無法復原。";
@@ -54,6 +54,28 @@
 "your_groups_count" = "您的群組（%d）";
 "manage_all_groups" = "管理所有群組";
 "leave" = "離開";
+
+// Badge System
+"badge_system" = "勳章";
+"view_badges" = "查看勳章";
+"badge_system_description" = "根據您的群組活動和行為獲得勳章";
+"earned_badges" = "已獲得勳章";
+"available_badges" = "可獲得勳章";
+"more_badges" = "更多勳章";
+
+// Offline Mode
+"offline_mode" = "離線模式";
+"offline_mode_description" = "停用所有服務";
+
+// Badge Descriptions
+"badge_punctual_sheep" = "總是準時參加群組聚會";
+"badge_pathfinder" = "帶領群組前往新目的地";
+"badge_guardian" = "幫助保持群組團結";
+"badge_early_bird" = "第一個加入群組活動";
+"badge_night_owl" = "在夜間活動中保持活躍";
+"badge_social_butterfly" = "與許多群組成員建立聯繫";
+"badge_adventure_seeker" = "參與具有挑戰性的活動";
+"badge_helping_hand" = "總是樂於助人";
 
 // Map
 "group_map" = "群組地圖";
@@ -75,7 +97,7 @@
 "completed" = "已完成";
 "no_waypoints_yet" = "尚無路徑點";
 "tap_plus_add_first" = "點擊 + 新增您的第一個路徑點";
-"long_press_to_reorder" = "長按以重新排序";
+"long_press_to_reorder" = "拖動來重新排列";
 
 // Waypoints
 "select_location" = "選擇位置";
@@ -137,7 +159,7 @@
 // Member Status Indicators
 "location_live" = "即時定位中";
 "last_seen_minutes_ago" = "%d分鐘前出現";
-"location_stale" = "位置過時";
+"location_stale" = "位置未更新";
 "new_invite_code" = "新邀請碼";
 
 // Edit Nickname Sheet
@@ -155,6 +177,7 @@
 "send_quick_commands" = "向您的群組發送快速指令";
 
 // Navigation
+"dashboard" = "主控台";
 "map" = "地圖";
 "direction" = "方向";
 "done" = "完成";
@@ -208,7 +231,7 @@
 "step_3" = "3.";
 "step_4" = "4.";
 "open_camera_app" = "開啟您 iPhone 上的相機應用程式";
-"point_camera_at_qr" = "將相機對準 QR 碼";
+"point_camera_at_qr" = "將相機對準 QR Code";
 "tap_notification" = "點擊出現的通知";
 "select_open_in_hither" = "選擇「在 Hither 中開啟」以加入群組";
 "join_group_question" = "您要加入此群組嗎？";
@@ -341,3 +364,24 @@
 "done" = "完成";
 "leave_group_alert" = "離開群組";
 "cancel" = "取消";
+
+// Additional settings
+"app_settings" = "應用程式設定";
+"location_services" = "定位服務";
+"live_activity" = "即時活動";
+"leader_settings" = "領隊設定";
+"distance_alert_threshold" = "距離警告閾值";
+"distance_alert_description" = "當跟隨者距離太遠時獲得通知";
+"select_distance_threshold" = "選擇通知的距離閾值";
+
+// Dashboard View strings
+"join_group_to_see_dashboard" = "加入群組以查看主控台";
+"follower_dashboard_coming_soon" = "成員主控台即將推出";
+"members_online" = "%d/%d 成員在線";
+"core_commands" = "核心指令";
+"gather" = "集合";
+"rest" = "休息";
+"quick_actions" = "快捷操作";
+"view_full_map" = "查看完整地圖";
+"invite_new_members" = "邀請新成員";
+"more_commands" = "更多指令";

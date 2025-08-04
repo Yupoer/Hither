@@ -34,6 +34,7 @@
 // Group/Settings Page
 "settings" = "Settings";
 "group" = "Group";
+"group_info" = "Group Info";
 "invite_members" = "Invite Members";
 "members_count" = "Members (%d)";
 "share" = "Share";
@@ -48,6 +49,28 @@
 "edit_nickname_title" = "Edit Nickname";
 "start_live_activity" = "Start Live Activity";
 "leave_group" = "Leave Group";
+
+// Badge System
+"badge_system" = "Badge System";
+"view_badges" = "View Badges";
+"badge_system_description" = "Earn badges based on your group activities and behaviors";
+"earned_badges" = "Earned Badges";
+"available_badges" = "Available Badges";
+"more_badges" = "More Badges";
+
+// Offline Mode
+"offline_mode" = "Offline Mode";
+"offline_mode_description" = "Disable all services for complete privacy";
+
+// Badge Descriptions
+"badge_punctual_sheep" = "Always arrive on time for group gatherings";
+"badge_pathfinder" = "Lead the group to new destinations";
+"badge_guardian" = "Help keep the group together";
+"badge_early_bird" = "First to join group activities";
+"badge_night_owl" = "Active during evening activities";
+"badge_social_butterfly" = "Connect with many group members";
+"badge_adventure_seeker" = "Participate in challenging activities";
+"badge_helping_hand" = "Always ready to help others";
 "no_group_found" = "No group found";
 "leave_group_confirmation" = "Are you sure you want to leave this group? This action cannot be undone.";
 "setting_up_group" = "Setting up your group...";
@@ -155,6 +178,7 @@
 "send_quick_commands" = "Send quick commands to your group";
 
 // Navigation
+"dashboard" = "Dashboard";
 "map" = "Map";
 "direction" = "Direction";
 "done" = "Done";
@@ -212,6 +236,18 @@
 "tap_notification" = "Tap the notification that appears";
 "select_open_in_hither" = "Select 'Open in Hither' to join the group";
 "join_group_question" = "Do you want to join this group?";
+
+// Dashboard View strings
+"join_group_to_see_dashboard" = "Join a group to see dashboard";
+"follower_dashboard_coming_soon" = "Follower dashboard coming soon";
+"members_online" = "%d/%d members online";
+"core_commands" = "Core Commands";
+"gather" = "Gather";
+"rest" = "Rest";
+"quick_actions" = "Quick Actions";
+"view_full_map" = "View Full Map";
+"invite_new_members" = "Invite New Members";
+"more_commands" = "More Commands";
 
 // Additional Direction View strings
 "start_precision_finding" = "Start Precision Finding";
@@ -341,3 +377,34 @@
 "done" = "Done";
 "leave_group_alert" = "Leave Group";
 "cancel" = "Cancel";
+
+// Additional settings
+"app_settings" = "App Settings";
+"location_services" = "Location Services";
+"live_activity" = "Live Activity";
+"leader_settings" = "Leader Settings";
+"distance_alert_threshold" = "Distance Alert Threshold";
+"distance_alert_description" = "Get notified when followers are too far";
+"select_distance_threshold" = "Select the distance threshold for notifications";
+
+// Find Member View
+"exit_find_mode" = "Exit Find Mode";
+"exit_find_mode_message" = "Are you sure you want to stop finding this member?";
+"exit" = "Exit";
+"finding_member" = "Finding Member";
+"to_target_member" = "to target member";
+"precision_finding_member_description" = "Use UWB for precise guidance when close to the target member";
+"location_inactive" = "Location Inactive";
+
+// Free Roam Mode
+"free_roam_mode" = "Free Roam Mode";
+"free_roam_mode_description" = "Auto-approve all find requests in this group";
+"free_roam_mode_enabled" = "Free roam mode enabled";
+"free_roam_mode_disabled" = "Free roam mode disabled";
+"free_roam_active" = "Free Roam Active";
+
+// Network & Error Handling
+"network_error" = "Network Error";
+"network_error_message" = "Unable to connect to location services. You can continue offline but location updates may be limited.";
+"retry" = "Retry";
+"continue_offline" = "Continue Offline";
