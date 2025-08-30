@@ -10,6 +10,8 @@ import FirebaseAuth
 
 struct ContentView: View {
     @EnvironmentObject private var authService: AuthenticationService
+    @EnvironmentObject private var languageService: LanguageService
+    @EnvironmentObject private var themeManager: ThemeManager
     @State private var pendingInviteCode: String?
     @State private var pendingGroupName: String?
     @State private var showingJoinAlert = false
@@ -24,12 +26,16 @@ struct ContentView: View {
                 if needsNicknameSetup {
                     NicknameSetupView()
                         .environmentObject(authService)
+                        .environmentObject(languageService)
+                        .environmentObject(themeManager)
                         .onAppear {
                             showingNicknameSetup = true
                         }
                 } else {
                     GroupSetupView()
                         .environmentObject(authService)
+                        .environmentObject(languageService)
+                        .environmentObject(themeManager)
                         .onOpenURL { url in
                             handleDeepLink(url)
                         }
@@ -50,6 +56,8 @@ struct ContentView: View {
             } else {
                 LoginView()
                     .environmentObject(authService)
+                    .environmentObject(languageService)
+                    .environmentObject(themeManager)
                     .onOpenURL { url in
                         handleDeepLink(url)
                     }
@@ -116,6 +124,8 @@ struct ContentView: View {
 
 struct NicknameSetupView: View {
     @EnvironmentObject private var authService: AuthenticationService
+    @EnvironmentObject private var languageService: LanguageService
+    @EnvironmentObject private var themeManager: ThemeManager
     @State private var nickname = ""
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -221,4 +231,6 @@ struct NicknameSetupView: View {
 #Preview {
     ContentView()
         .environmentObject(AuthenticationService())
+        .environmentObject(LanguageService())
+        .environmentObject(ThemeManager.shared)
 }

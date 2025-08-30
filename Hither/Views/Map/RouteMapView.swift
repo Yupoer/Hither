@@ -16,6 +16,7 @@ struct RouteMapView: UIViewRepresentable {
     let currentRoute: MKRoute?
     let userLocation: CLLocation?
     let onRegionChange: ((MKCoordinateRegion) -> Void)?
+    let shouldUseTiltedCamera: Bool
     
     func makeUIView(context: Context) -> MKMapView {
         let mapView = MKMapView()
@@ -24,6 +25,11 @@ struct RouteMapView: UIViewRepresentable {
         mapView.userTrackingMode = .none
         mapView.mapType = mapType
         
+        // Configure tilted camera if requested
+        if shouldUseTiltedCamera {
+            configureTiltedCamera(for: mapView)
+        }
+        
         return mapView
     }
     
@@ -31,9 +37,13 @@ struct RouteMapView: UIViewRepresentable {
         // Update map type
         mapView.mapType = mapType
         
-        // Update region
+        // Update region with camera configuration
         if !mapView.region.center.isEqual(to: region.center, tolerance: 0.0001) {
-            mapView.setRegion(region, animated: true)
+            if shouldUseTiltedCamera {
+                updateRegionWithTiltedCamera(mapView: mapView, region: region)
+            } else {
+                mapView.setRegion(region, animated: true)
+            }
         }
         
         // Update annotations with better comparison to avoid flashing
@@ -76,6 +86,33 @@ struct RouteMapView: UIViewRepresentable {
     
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
+    }
+    
+    // MARK: - Camera Configuration Methods
+    
+    private func configureTiltedCamera(for mapView: MKMapView) {
+        let camera = MKMapCamera()
+        camera.centerCoordinate = region.center
+        camera.pitch = 70.0 // 70 degree tilt
+        camera.altitude = 1000.0 // Appropriate altitude for the zoom level
+        camera.heading = 0.0 // North-facing initially
+        
+        mapView.setCamera(camera, animated: false)
+    }
+    
+    private func updateRegionWithTiltedCamera(mapView: MKMapView, region: MKCoordinateRegion) {
+        let camera = MKMapCamera()
+        camera.centerCoordinate = region.center
+        camera.pitch = 70.0 // Maintain 70 degree tilt
+        
+        // Calculate altitude based on region span
+        let spanInMeters = max(region.span.latitudeDelta, region.span.longitudeDelta) * 111000.0 // Convert degrees to meters
+        camera.altitude = max(500.0, min(10000.0, spanInMeters * 2)) // Reasonable altitude range
+        
+        // Preserve existing heading if possible
+        camera.heading = mapView.camera.heading
+        
+        mapView.setCamera(camera, animated: true)
     }
     
     class Coordinator: NSObject, MKMapViewDelegate {

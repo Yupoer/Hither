@@ -12,12 +12,19 @@ struct ItineraryView: View {
     @State private var showingImportURL = false
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 0) {
                 contentView
             }
             .navigationTitle("itinerary".localized)
-            .navigationBarItems(trailing: isLeader ? AnyView(navigationButtons) : AnyView(EmptyView()))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if isLeader {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        navigationButtons
+                    }
+                }
+            }
             .onAppear { setupItineraryService() }
             .sheet(isPresented: $showingAddWaypoint) {
                 AddWaypointNavigationView(

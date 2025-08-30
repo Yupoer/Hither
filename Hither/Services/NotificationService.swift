@@ -186,6 +186,80 @@ class NotificationService: NSObject, ObservableObject {
         }
     }
     
+    // MARK: - Find Request Notifications
+    
+    func scheduleFindRequestNotification(
+        requestId: String,
+        groupId: String,
+        requesterName: String,
+        targetName: String
+    ) async {
+        guard isEnabled else { return }
+        
+        let content = UNMutableNotificationContent()
+        content.title = "🔍 Find Request"
+        content.body = "\(requesterName) wants to find you. Allow them to see your location?"
+        content.sound = .default
+        content.badge = 1
+        content.categoryIdentifier = "FIND_REQUEST"
+        
+        content.userInfo = [
+            "requestId": requestId,
+            "groupId": groupId,
+            "requesterName": requesterName,
+            "targetName": targetName,
+            "type": "find_request"
+        ]
+        
+        let request = UNNotificationRequest(
+            identifier: "find_request_\(requestId)",
+            content: content,
+            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        )
+        
+        do {
+            try await notificationCenter.add(request)
+            print("✅ Scheduled find request notification")
+        } catch {
+            errorMessage = "Failed to schedule find request notification: \(error.localizedDescription)"
+            print("❌ Failed to schedule find request notification: \(error)")
+        }
+    }
+    
+    func scheduleRequestApprovedNotification(
+        requestId: String,
+        targetName: String
+    ) async {
+        guard isEnabled else { return }
+        
+        let content = UNMutableNotificationContent()
+        content.title = "✅ Request Approved"
+        content.body = "\(targetName) approved your find request. You can now start finding them!"
+        content.sound = .default
+        content.badge = 1
+        content.categoryIdentifier = "REQUEST_APPROVED"
+        
+        content.userInfo = [
+            "requestId": requestId,
+            "targetName": targetName,
+            "type": "request_approved"
+        ]
+        
+        let request = UNNotificationRequest(
+            identifier: "request_approved_\(requestId)",
+            content: content,
+            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        )
+        
+        do {
+            try await notificationCenter.add(request)
+            print("✅ Scheduled request approved notification")
+        } catch {
+            errorMessage = "Failed to schedule request approved notification: \(error.localizedDescription)"
+            print("❌ Failed to schedule request approved notification: \(error)")
+        }
+    }
+    
     // MARK: - Notification Categories
     
     func setupNotificationCategories() {
@@ -235,10 +309,41 @@ class NotificationService: NSObject, ObservableObject {
             intentIdentifiers: []
         )
         
+        let findRequestCategory = UNNotificationCategory(
+            identifier: "FIND_REQUEST",
+            actions: [
+                UNNotificationAction(
+                    identifier: "APPROVE_FIND",
+                    title: "Allow",
+                    options: []
+                ),
+                UNNotificationAction(
+                    identifier: "DENY_FIND",
+                    title: "Deny",
+                    options: []
+                )
+            ],
+            intentIdentifiers: []
+        )
+        
+        let requestApprovedCategory = UNNotificationCategory(
+            identifier: "REQUEST_APPROVED",
+            actions: [
+                UNNotificationAction(
+                    identifier: "START_FINDING",
+                    title: "Start Finding",
+                    options: [.foreground]
+                )
+            ],
+            intentIdentifiers: []
+        )
+        
         notificationCenter.setNotificationCategories([
             commandCategory,
             itineraryCategory,
-            locationCategory
+            locationCategory,
+            findRequestCategory,
+            requestApprovedCategory
         ])
     }
     
@@ -298,6 +403,15 @@ extension NotificationService: UNUserNotificationCenterDelegate {
         case "ACKNOWLEDGE", "SEND_LOCATION":
             // Handle quick actions
             break
+        case "APPROVE_FIND":
+            // Handle find request approval
+            handleFindRequestApproval(userInfo: userInfo)
+        case "DENY_FIND":
+            // Handle find request denial
+            handleFindRequestDenial(userInfo: userInfo)
+        case "START_FINDING":
+            // Handle start finding action
+            handleStartFinding(userInfo: userInfo)
         case UNNotificationDefaultActionIdentifier:
             // Handle default tap
             handleDefaultNotificationTap(userInfo: userInfo)
@@ -326,6 +440,70 @@ extension NotificationService: UNUserNotificationCenterDelegate {
     private func handleDefaultNotificationTap(userInfo: [AnyHashable: Any]) {
         // In a real implementation, this would navigate to the appropriate tab
         print("Default notification tapped: \(userInfo)")
+    }
+    
+    private func handleFindRequestApproval(userInfo: [AnyHashable: Any]) {
+        guard let requestId = userInfo["requestId"] as? String,
+              let groupId = userInfo["groupId"] as? String else {
+            print("❌ Missing required data for find request approval")
+            return
+        }
+        
+        print("✅ Find request approved via notification: \(requestId)")
+        
+        Task {
+            do {
+                let findRequestService = FindRequestService()
+                // Extract targetId from userInfo if available
+                let targetId = userInfo["targetId"] as? String ?? ""
+                try await findRequestService.approveRequest(groupId: groupId, requestId: requestId, targetId: targetId)
+                print("✅ Find request approved successfully")
+            } catch {
+                print("❌ Failed to approve find request: \(error)")
+                await MainActor.run {
+                    self.errorMessage = "Failed to approve find request: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    private func handleFindRequestDenial(userInfo: [AnyHashable: Any]) {
+        guard let requestId = userInfo["requestId"] as? String,
+              let groupId = userInfo["groupId"] as? String else {
+            print("❌ Missing required data for find request denial")
+            return
+        }
+        
+        print("❌ Find request denied via notification: \(requestId)")
+        
+        Task {
+            do {
+                let findRequestService = FindRequestService()
+                try await findRequestService.denyRequest(groupId: groupId, requestId: requestId)
+                print("✅ Find request denied successfully")
+            } catch {
+                print("❌ Failed to deny find request: \(error)")
+                await MainActor.run {
+                    self.errorMessage = "Failed to deny find request: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    private func handleStartFinding(userInfo: [AnyHashable: Any]) {
+        guard let requestId = userInfo["requestId"] as? String else {
+            print("❌ Missing request ID for start finding")
+            return
+        }
+        
+        print("🧭 Starting finding mode via notification: \(requestId)")
+        
+        // Post notification to trigger finding mode in the app
+        NotificationCenter.default.post(
+            name: NSNotification.Name("StartFindingMode"),
+            object: nil,
+            userInfo: ["requestId": requestId]
+        )
     }
 }
 

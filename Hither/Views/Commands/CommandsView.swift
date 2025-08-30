@@ -18,7 +18,7 @@ struct CommandsView: View {
     @State private var showingCustomMessageSheet = false
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 0) {
                 if let group = groupService.currentGroup,
                    let user = authService.currentUser,
@@ -38,6 +38,7 @@ struct CommandsView: View {
                 commandHistorySection()
             }
             .navigationTitle("commands".localized)
+            .navigationBarTitleDisplayMode(.inline)
             .onAppear {
                 setupCommandService()
                 setupNotifications()
@@ -50,12 +51,8 @@ struct CommandsView: View {
     
     @ViewBuilder
     private func leaderCommandInterface(group: HitherGroup, user: HitherUser) -> some View {
-        VStack(spacing: 16) {
-            Text("send_commands_to_group".localized)
-                .font(.headline)
-                .padding(.top)
-            
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 12) {
+        VStack(spacing: 24) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 16) {
                 ForEach(CommandType.leaderCommands.filter { $0 != .custom }, id: \.self) { commandType in
                     CommandButton(
                         type: commandType,
@@ -71,13 +68,20 @@ struct CommandsView: View {
                     )
                 }
                 
-                // Custom message button
-                Button(action: {
+                // Enhanced custom message button with claude design
+                DarkBlueButton(variant: .secondary, action: {
                     showingCustomMessageSheet = true
                 }) {
                     VStack(spacing: 8) {
                         Image(systemName: CommandType.custom.icon)
                             .font(.title2)
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.purple, .pink],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
                         
                         Text(CommandType.custom.displayName)
                             .font(.caption)
@@ -85,36 +89,59 @@ struct CommandsView: View {
                     }
                     .frame(height: 60)
                     .frame(maxWidth: .infinity)
-                    .background(Color.purple)
-                    .foregroundColor(.white)
-                    .cornerRadius(8)
                 }
             }
-            .padding(.horizontal)
+            .padding(.horizontal, 16)
             
+            // Status indicators with liquid glass treatment
             if commandService.isLoading {
-                SheepLoadingView(message: "sending_command".localized)
-                    .padding()
+                VStack(spacing: 12) {
+                    SheepLoadingView(message: "sending_command".localized)
+                }
+                .padding(16)
+                .darkBlueCard(cornerRadius: 16)
+                .padding(.horizontal, 16)
             }
             
             if let errorMessage = commandService.errorMessage {
                 Text(errorMessage)
                     .foregroundColor(.red)
                     .font(.caption)
-                    .padding(.horizontal)
+                    .fontWeight(.medium)
+                    .multilineTextAlignment(.center)
+                    .padding(12)
+                    .darkBlueCard(cornerRadius: 12)
+                    .padding(.horizontal, 16)
             }
         }
-        .padding(.bottom)
+        .padding(.bottom, 20)
     }
     
     @ViewBuilder
     private func followerCommandInterface() -> some View {
-        VStack(spacing: 16) {
-            Text("send_requests_to_leader".localized)
-                .font(.headline)
-                .padding(.top)
+        VStack(spacing: 24) {
+            // Header with liquid glass treatment
+            VStack(spacing: 8) {
+                Text("send_requests_to_leader".localized)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.orange, .yellow],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                
+                Text("communicate_needs_leader".localized)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.top, 20)
+            .darkBlueCard(cornerRadius: 16)
+            .padding(.horizontal, 16)
             
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 12) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 16) {
                 ForEach(CommandType.followerRequests, id: \.self) { commandType in
                     CommandButton(
                         type: commandType,
@@ -132,13 +159,20 @@ struct CommandsView: View {
                     )
                 }
                 
-                // Custom request button
-                Button(action: {
+                // Enhanced custom request button with claude design
+                DarkBlueButton(variant: .secondary, action: {
                     showingCustomMessageSheet = true
                 }) {
                     VStack(spacing: 8) {
                         Image(systemName: CommandType.custom.icon)
                             .font(.title2)
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.orange, .yellow],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
                         
                         Text("custom_request".localized)
                             .font(.caption)
@@ -146,70 +180,107 @@ struct CommandsView: View {
                     }
                     .frame(height: 60)
                     .frame(maxWidth: .infinity)
-                    .background(Color.orange)
-                    .foregroundColor(.white)
-                    .cornerRadius(8)
                 }
             }
-            .padding(.horizontal)
+            .padding(.horizontal, 16)
             
+            // Status indicators with liquid glass treatment
             if commandService.isLoading {
-                SheepLoadingView(message: "sending_request".localized)
-                    .padding()
+                VStack(spacing: 12) {
+                    SheepLoadingView(message: "sending_request".localized)
+                }
+                .padding(16)
+                .darkBlueCard(cornerRadius: 16)
+                .padding(.horizontal, 16)
             }
             
             if let errorMessage = commandService.errorMessage {
                 Text(errorMessage)
                     .foregroundColor(.red)
                     .font(.caption)
-                    .padding(.horizontal)
+                    .fontWeight(.medium)
+                    .multilineTextAlignment(.center)
+                    .padding(12)
+                    .darkBlueCard(cornerRadius: 12)
+                    .padding(.horizontal, 16)
             }
         }
-        .padding(.bottom)
+        .padding(.bottom, 20)
     }
     
     @ViewBuilder
     private func commandHistorySection() -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
+            // Enhanced header with liquid glass treatment
             HStack {
                 Text("recent_commands".localized)
                     .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.primary, .secondary],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
                 
                 Spacer()
                 
                 if !commandService.recentCommands.isEmpty {
                     Text("\(commandService.recentCommands.count)")
                         .font(.caption)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.blue.opacity(0.2))
-                        .cornerRadius(4)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            LinearGradient(
+                                colors: [.blue, .purple],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .cornerRadius(12)
+                        .shadow(color: Color.blue.opacity(0.3), radius: 4, y: 2)
                 }
             }
-            .padding(.horizontal)
-            .padding(.top)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .darkBlueCard(cornerRadius: 16)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
             
             if commandService.recentCommands.isEmpty {
-                VStack(spacing: 12) {
+                VStack(spacing: 16) {
                     Image(systemName: "tray")
-                        .font(.system(size: 40))
-                        .foregroundColor(.gray)
+                        .font(.system(size: 50))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [.gray.opacity(0.6), .gray.opacity(0.4)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
                     
                     Text("no_commands_yet".localized)
                         .font(.subheadline)
+                        .fontWeight(.medium)
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 40)
+                .darkBlueCard(cornerRadius: 20)
+                .padding(.horizontal, 16)
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 8) {
+                    LazyVStack(spacing: 12) {
                         ForEach(commandService.recentCommands) { command in
                             CommandHistoryCard(command: command)
                         }
                     }
-                    .padding(.horizontal)
+                    .padding(.horizontal, 16)
                 }
+                .frame(minHeight: 200)
             }
         }
     }
@@ -318,43 +389,40 @@ struct CommandButton: View {
     let type: CommandType
     let action: () -> Void
     
+    @Environment(\.colorScheme) private var colorScheme
+    
     var body: some View {
+        let theme = DarkBlueTheme(isDark: colorScheme == .dark)
+        
         Button(action: action) {
             VStack(spacing: 8) {
                 Image(systemName: type.icon)
                     .font(.title2)
+                    .foregroundColor(theme.primary)
+                    .shadow(color: theme.primary.opacity(0.3), radius: 4, y: 2)
                 
                 Text(type.displayName)
                     .font(.caption)
-                    .fontWeight(.medium)
+                    .fontWeight(.semibold)
+                    .foregroundColor(theme.foreground)
             }
             .frame(height: 60)
             .frame(maxWidth: .infinity)
-            .background(getBackgroundColor())
-            .foregroundColor(.white)
-            .cornerRadius(8)
+            .background(theme.card)
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(theme.border, lineWidth: 1)
+            )
+            .shadow(
+                color: theme.shadowColor,
+                radius: 4,
+                y: 2
+            )
         }
+        .buttonStyle(PlainButtonStyle())
     }
     
-    private func getBackgroundColor() -> Color {
-        switch type {
-        // Leader commands
-        case .gather: return .blue
-        case .depart: return .green
-        case .rest: return .orange
-        case .beCareful: return .red
-        case .goLeft, .goRight: return .purple
-        case .stop: return .red
-        case .hurryUp: return .yellow
-        case .custom: return .gray
-        
-        // Follower requests - use orange/yellow tones
-        case .needRestroom: return .orange
-        case .needBreak: return .yellow
-        case .needHelp: return .red
-        case .foundSomething: return .green
-        }
-    }
 }
 
 struct CommandHistoryCard: View {
@@ -362,47 +430,87 @@ struct CommandHistoryCard: View {
     @State private var currentTime = Date()
     
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 16) {
+            // Enhanced icon with glass treatment
             VStack {
-                Image(systemName: command.type.icon)
-                    .font(.title3)
-                    .foregroundColor(getIconColor())
+                ZStack {
+                    Circle()
+                        .fill(.ultraThinMaterial)
+                        .frame(width: 40, height: 40)
+                        .overlay(
+                            Circle()
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [getIconColor().opacity(0.4), getIconColor().opacity(0.2)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 1.5
+                                )
+                        )
+                        .shadow(color: getIconColor().opacity(0.2), radius: 6, y: 3)
+                    
+                    Image(systemName: command.type.icon)
+                        .font(.title3)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [getIconColor(), getIconColor().opacity(0.8)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                }
                 
                 Spacer()
             }
             
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text(command.senderName)
                         .font(.headline)
+                        .fontWeight(.semibold)
                         .foregroundColor(.primary)
                     
                     Spacer()
                     
                     Text(formatTimestamp(command.timestamp))
                         .font(.caption)
+                        .fontWeight(.medium)
                         .foregroundColor(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.ultraThinMaterial)
+                        .cornerRadius(8)
                 }
                 
                 Text(command.message)
                     .font(.body)
                     .foregroundColor(.primary)
+                    .multilineTextAlignment(.leading)
                 
                 if command.type != .custom {
                     Text(command.type.displayName)
                         .font(.caption)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(getIconColor().opacity(0.2))
-                        .cornerRadius(4)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            LinearGradient(
+                                colors: [getIconColor(), getIconColor().opacity(0.8)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .cornerRadius(8)
+                        .shadow(color: getIconColor().opacity(0.3), radius: 4, y: 2)
                 }
             }
             
             Spacer()
         }
-        .padding()
-        .background(Color.gray.opacity(0.05))
-        .cornerRadius(8)
+        .padding(16)
+        .darkBlueCard(cornerRadius: 16)
         .onAppear {
             currentTime = Date()
         }
@@ -449,3 +557,4 @@ struct CommandHistoryCard: View {
         }
     }
 }
+

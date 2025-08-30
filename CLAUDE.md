@@ -87,6 +87,8 @@ xcodebuild -project Hither.xcodeproj -scheme Hither test
 xcodebuild -project Hither.xcodeproj -scheme Hither -destination 'platform=iOS Simulator,name=iPhone 15' test
 ```
 
+**IMPORTANT:** Always compile to make sure it can work before finishing any task.
+
 ### Opening in Xcode
 ```bash
 open Hither.xcodeproj
@@ -177,3 +179,198 @@ Location of Firebase config: `Hither/GoogleService-Info.plist`
 - Generic AI-generated footers or signatures
 
 Keep commit messages concise, descriptive, and focused on the actual changes made.
+
+## DarkBlue Theme System
+
+The app uses a comprehensive theme system called **DarkBlue** that provides consistent design tokens across all UI components.
+
+### Location
+- **File:** `Hither/Views/Components/DarkBlueThemeSystem.swift`
+- **Type:** OKLCH color space-based theme system
+
+### Components Available
+- **DarkBlueCard:** Themed card container with proper shadows and borders
+- **DarkBlueButton:** Primary button component with variants (primary, secondary, accent, muted)
+- **DarkBlueSectionHeader:** Themed section headers with gradient text
+- **DarkBlueTextField:** Input fields with proper theming
+- **DarkBlueToggle:** Toggle switches with theme colors
+- **DarkBlueStandardButton:** Standard buttons with theme colors
+
+### Usage
+```swift
+// Card usage
+.darkBlueCard(cornerRadius: 16)
+
+// Button usage
+DarkBlueButton(variant: .primary, action: { }) {
+    Text("Button Text")
+}
+
+// Text field usage
+DarkBlueTextField(
+    placeholder: "Enter text",
+    text: $textBinding,
+    icon: "textformat",
+    iconColor: .blue
+)
+```
+
+### Color System
+The theme uses OKLCH color space for better color accuracy and supports both light and dark modes automatically. Colors are calculated based on CSS design tokens converted to Swift.
+
+### Complete CSS Variables
+```css
+:root {
+  --background: oklch(0.9842 0.0034 247.8575);
+  --foreground: oklch(0.1363 0.0364 259.2010);
+  --card: oklch(1.0000 0 0);
+  --card-foreground: oklch(0.1363 0.0364 259.2010);
+  --popover: oklch(1.0000 0 0);
+  --popover-foreground: oklch(0.1363 0.0364 259.2010);
+  --primary: oklch(0.5461 0.2152 262.8809);
+  --primary-foreground: oklch(1.0000 0 0);
+  --secondary: oklch(0.9683 0.0069 247.8956);
+  --secondary-foreground: oklch(0.2077 0.0398 265.7549);
+  --muted: oklch(0.9683 0.0069 247.8956);
+  --muted-foreground: oklch(0.5544 0.0407 257.4166);
+  --accent: oklch(0.9705 0.0142 254.6042);
+  --accent-foreground: oklch(0.3791 0.1378 265.5222);
+  --destructive: oklch(0.6368 0.2078 25.3313);
+  --destructive-foreground: oklch(1.0000 0 0);
+  --border: oklch(0.9288 0.0126 255.5078);
+  --input: oklch(0.9288 0.0126 255.5078);
+  --ring: oklch(0.5461 0.2152 262.8809);
+  --sidebar: oklch(1.0000 0 0);
+  --sidebar-foreground: oklch(0.3717 0.0392 257.2870);
+  --sidebar-primary: oklch(0.5461 0.2152 262.8809);
+  --sidebar-primary-foreground: oklch(1.0000 0 0);
+  --sidebar-accent: oklch(0.9705 0.0142 254.6042);
+  --sidebar-accent-foreground: oklch(0.3791 0.1378 265.5222);
+  --sidebar-border: oklch(0.9288 0.0126 255.5078);
+  --sidebar-ring: oklch(0.5461 0.2152 262.8809);
+  --radius: 0.75rem;
+  --shadow: 0px 8px 24px -8px hsl(215.0000 20.2247% 65.0980% / 0.10);
+}
+
+.dark {
+  --background: oklch(0.1363 0.0364 259.2010);
+  --foreground: oklch(0.9842 0.0034 247.8575);
+  --card: oklch(0.2077 0.0398 265.7549);
+  --card-foreground: oklch(0.9842 0.0034 247.8575);
+  --popover: oklch(0.1363 0.0364 259.2010);
+  --popover-foreground: oklch(0.9842 0.0034 247.8575);
+  --primary: oklch(0.6231 0.1880 259.8145);
+  --primary-foreground: oklch(1.0000 0 0);
+  --secondary: oklch(0.2795 0.0368 260.0310);
+  --secondary-foreground: oklch(0.9288 0.0126 255.5078);
+  --muted: oklch(0.2795 0.0368 260.0310);
+  --muted-foreground: oklch(0.7107 0.0351 256.7878);
+  --accent: oklch(0.2823 0.0874 267.9352);
+  --accent-foreground: oklch(0.9288 0.0126 255.5078);
+  --destructive: oklch(0.3958 0.1331 25.7230);
+  --destructive-foreground: oklch(0.9842 0.0034 247.8575);
+  --border: oklch(0.2795 0.0368 260.0310);
+  --input: oklch(0.2795 0.0368 260.0310);
+  --ring: oklch(0.6231 0.1880 259.8145);
+  --sidebar: oklch(0.2077 0.0398 265.7549);
+  --sidebar-foreground: oklch(0.9288 0.0126 255.5078);
+  --sidebar-primary: oklch(0.6231 0.1880 259.8145);
+  --sidebar-primary-foreground: oklch(1.0000 0 0);
+  --sidebar-accent: oklch(0.2823 0.0874 267.9352);
+  --sidebar-accent-foreground: oklch(0.9288 0.0126 255.5078);
+  --sidebar-border: oklch(0.2795 0.0368 260.0310);
+  --sidebar-ring: oklch(0.6231 0.1880 259.8145);
+  --shadow: 0px 8px 24px -8px hsl(0 0% 0% / 0.25);
+}
+```
+
+### Design Principles
+- Automatic dark/light mode adaptation
+- OKLCH color space for perceptual uniformity
+- Consistent corner radius (12px default)
+- Proper shadow and border treatments
+- Accessible color contrasts
+- Complete destructive color support
+- Sidebar theming for navigation components
+
+## Google Maps Integration
+
+### API Configuration
+- **API Key:** `AIzaSyCx0cyeUy7O4HEdZcGSlElYJibPVT5ciZQ`
+- **Allowed APIs:**
+  - Routes API
+  - Places API (New)
+  - Maps SDK for iOS
+
+### Implementation Requirements
+When implementing Google Maps to replace Apple MapKit:
+1. Use Google Maps SDK for iOS for map display
+2. Use Google Places API for location search and autocomplete
+3. Use Google Routes API for navigation and route calculation
+4. Maintain existing functionality while leveraging Google's services
+5. Implement search bar with Google Places autocomplete on map page
+
+### Security Note
+The API key is restricted to only the specified APIs for security. Do not attempt to use other Google Maps APIs with this key.
+
+## Complete Dark Theme CSS Variables
+
+The DarkBlue theme includes comprehensive dark mode support with the following complete CSS variable set:
+
+```css
+.dark {
+  --background: oklch(0.1363 0.0364 259.2010);
+  --foreground: oklch(0.9842 0.0034 247.8575);
+  --card: oklch(0.2077 0.0398 265.7549);
+  --card-foreground: oklch(0.9842 0.0034 247.8575);
+  --popover: oklch(0.1363 0.0364 259.2010);
+  --popover-foreground: oklch(0.9842 0.0034 247.8575);
+  --primary: oklch(0.6231 0.1880 259.8145);
+  --primary-foreground: oklch(1.0000 0 0);
+  --secondary: oklch(0.2795 0.0368 260.0310);
+  --secondary-foreground: oklch(0.9288 0.0126 255.5078);
+  --muted: oklch(0.2795 0.0368 260.0310);
+  --muted-foreground: oklch(0.7107 0.0351 256.7878);
+  --accent: oklch(0.2823 0.0874 267.9352);
+  --accent-foreground: oklch(0.9288 0.0126 255.5078);
+  --destructive: oklch(0.3958 0.1331 25.7230);
+  --destructive-foreground: oklch(0.9842 0.0034 247.8575);
+  --border: oklch(0.2795 0.0368 260.0310);
+  --input: oklch(0.2795 0.0368 260.0310);
+  --ring: oklch(0.6231 0.1880 259.8145);
+  --sidebar: oklch(0.1363 0.0364 259.2010);
+  --sidebar-foreground: oklch(0.7107 0.0351 256.7878);
+  --sidebar-primary: oklch(0.6231 0.1880 259.8145);
+  --sidebar-primary-foreground: oklch(1.0000 0 0);
+  --sidebar-accent: oklch(0.2823 0.0874 267.9352);
+  --sidebar-accent-foreground: oklch(0.9288 0.0126 255.5078);
+  --sidebar-border: oklch(0.2795 0.0368 260.0310);
+}
+```
+
+### Theme Implementation Status
+- ✅ DarkBlueThemeSystem.swift - Complete theme system with OKLCH color support
+- ✅ All UI components migrated from LiquidGlass to DarkBlue
+- ✅ Button variants: primary, secondary, accent, muted, destructive
+- ✅ Card components with shadows and border styling
+- ✅ Text field components with theme-aware colors
+- ✅ Toggle components with theme-aware accent colors
+- ✅ Automatic light/dark mode detection and switching
+
+### Current Implementation Files
+- `Hither/Views/Components/DarkBlueThemeSystem.swift` - Main theme system
+- `Hither/Views/Map/MapView.swift` - Updated to use Google Maps Native SDK
+- `Hither/Views/Map/GoogleMapsNativeView.swift` - Native iOS SDK Google Maps component
+- `Hither/Views/Map/MapSearchBar.swift` - Google Places search with autocomplete (Places API)
+- `Hither/Services/GoogleMapsService.swift` - Google Maps API integration (Routes & Places API only)
+
+### Google Maps SDK Installation Required
+To use the native Google Maps implementation, you must add the Google Maps SDK for iOS dependency:
+1. In Xcode, go to File → Add Package Dependencies
+2. Add: `https://github.com/googlemaps/ios-maps-sdk`
+3. Configure the SDK with the provided API key in AppDelegate
+
+**Important**: Only the following APIs are authorized for use:
+- Routes API (for directions)
+- Places API (New) (for search/autocomplete)  
+- Maps SDK for iOS (for native map display)

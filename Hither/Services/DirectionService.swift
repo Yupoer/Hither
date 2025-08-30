@@ -15,6 +15,8 @@ import Combine
 class DirectionService: NSObject, ObservableObject {
     @Published var distanceToLeader: Double?
     @Published var bearingToLeader: Double?
+    @Published var distanceToTarget: Double?
+    @Published var bearingToTarget: Double?
     @Published var isNearbyInteractionAvailable = false
     @Published var nearbyObjects: [NINearbyObject] = []
     @Published var errorMessage: String?
@@ -22,6 +24,7 @@ class DirectionService: NSObject, ObservableObject {
     private var niSession: NISession?
     private let locationService: LocationService
     private var targetLeaderLocation: CLLocationCoordinate2D?
+    private var targetMemberLocation: CLLocationCoordinate2D?
     
     init(locationService: LocationService) {
         self.locationService = locationService
@@ -54,6 +57,7 @@ class DirectionService: NSObject, ObservableObject {
             .compactMap { $0 }
             .sink { [weak self] location in
                 self?.updateDirectionCalculations()
+                self?.updateTargetDirectionCalculations()
             }
             .store(in: &cancellables)
     }
@@ -63,6 +67,17 @@ class DirectionService: NSObject, ObservableObject {
     func setTargetLeader(location: CLLocationCoordinate2D) {
         targetLeaderLocation = location
         updateDirectionCalculations()
+    }
+    
+    func setTargetMember(location: CLLocationCoordinate2D) {
+        targetMemberLocation = location
+        updateTargetDirectionCalculations()
+    }
+    
+    func clearTargetMember() {
+        targetMemberLocation = nil
+        distanceToTarget = nil
+        bearingToTarget = nil
     }
     
     private func updateDirectionCalculations() {
@@ -78,6 +93,21 @@ class DirectionService: NSObject, ObservableObject {
         
         // Calculate bearing
         bearingToLeader = locationService.calculateBearing(to: leaderLocation)
+    }
+    
+    private func updateTargetDirectionCalculations() {
+        guard let memberLocation = targetMemberLocation,
+              let _ = locationService.currentLocation else {
+            distanceToTarget = nil
+            bearingToTarget = nil
+            return
+        }
+        
+        // Calculate distance
+        distanceToTarget = locationService.calculateDistance(to: memberLocation)
+        
+        // Calculate bearing
+        bearingToTarget = locationService.calculateBearing(to: memberLocation)
     }
     
     func startNearbyInteraction(with discoveryToken: NIDiscoveryToken) {
@@ -122,6 +152,30 @@ class DirectionService: NSObject, ObservableObject {
     
     func getDirectionDescription() -> String {
         guard let bearing = bearingToLeader else { return "Unknown direction" }
+        
+        let directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+        let index = Int((bearing + 22.5) / 45) % 8
+        return directions[index]
+    }
+    
+    // Helper functions for target member direction display
+    func getTargetDirectionArrowRotation() -> Angle {
+        guard let bearing = bearingToTarget else { return .zero }
+        return .degrees(bearing)
+    }
+    
+    func getTargetDistanceString() -> String {
+        guard let distance = distanceToTarget else { return "Unknown" }
+        
+        if distance < 1000 {
+            return String(format: "%.0fm", distance)
+        } else {
+            return String(format: "%.1fkm", distance / 1000)
+        }
+    }
+    
+    func getTargetDirectionDescription() -> String {
+        guard let bearing = bearingToTarget else { return "Unknown direction" }
         
         let directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
         let index = Int((bearing + 22.5) / 45) % 8

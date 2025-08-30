@@ -22,6 +22,7 @@ class LocationService: NSObject, ObservableObject {
     private var groupId: String?
     private var userId: String?
     private var locationUpdateTimer: Timer?
+    private let developmentService = DevelopmentService.shared
     
     // Live Activity destination monitoring
     var activeDestination: CLLocationCoordinate2D?
@@ -46,6 +47,36 @@ class LocationService: NSObject, ObservableObject {
         locationManager.desiredAccuracy = kCLLocationAccuracyBest
         locationManager.distanceFilter = 10 // Update every 10 meters
         authorizationStatus = locationManager.authorizationStatus
+        
+        // Listen to development service changes
+        setupDevelopmentModeObserver()
+    }
+    
+    private func setupDevelopmentModeObserver() {
+        // Observe changes to development service to update location immediately
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("DevelopmentLocationChanged"),
+            object: nil,
+            queue: .main
+        ) { _ in
+            self.updateLocationFromDevelopmentService()
+        }
+    }
+    
+    private func updateLocationFromDevelopmentService() {
+        if let spoofedLocation = developmentService.getCurrentLocation() {
+            currentLocation = spoofedLocation
+            
+            // Check destination proximity for Live Activity
+            checkDestinationProximity(at: spoofedLocation)
+            
+            // Sync to Firestore when tracking
+            if isTracking {
+                Task {
+                    await syncLocationToFirestore()
+                }
+            }
+        }
     }
     
     func requestLocationPermission() {
@@ -195,9 +226,9 @@ class LocationService: NSObject, ObservableObject {
         let geoPoint = GeoPoint(from: location.coordinate)
         
         do {
-            // Update user location in groups/{groupId}/users/{userId} subcollection
+            // Update user location in groups/{groupId}/members/{userId} subcollection
             try await db.collection("groups").document(groupId)
-                .collection("users").document(userId).updateData([
+                .collection("members").document(userId).updateData([
                     "location": [
                         "latitude": geoPoint.latitude,
                         "longitude": geoPoint.longitude
@@ -300,10 +331,13 @@ class LocationService: NSObject, ObservableObject {
 extension LocationService: CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
-        currentLocation = location
+        
+        // Use spoofed location if development mode is enabled
+        let effectiveLocation = developmentService.getCurrentLocation() ?? location
+        currentLocation = effectiveLocation
         
         // Check destination proximity for Live Activity
-        checkDestinationProximity(at: location)
+        checkDestinationProximity(at: effectiveLocation)
         
         // Sync to Firestore when tracking and location changes significantly
         if isTracking {

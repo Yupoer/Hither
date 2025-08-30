@@ -9,15 +9,20 @@ import SwiftUI
 import Foundation
 import FirebaseCore
 import GoogleSignIn
+import GoogleMaps
 
 @main
 struct HitherApp: App {
     @StateObject private var authService = AuthenticationService()
     @StateObject private var notificationService = NotificationService()
     @StateObject private var languageService = LanguageService()
+    @StateObject private var themeManager = ThemeManager.shared
     
     init() {
         FirebaseApp.configure()
+        
+        // Configure Google Maps SDK
+        GMSServices.provideAPIKey("AIzaSyCx0cyeUy7O4HEdZcGSlElYJibPVT5ciZQ")
         
         // Configure Google Sign-In
         if let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
@@ -42,6 +47,7 @@ struct HitherApp: App {
                 .environmentObject(authService)
                 .environmentObject(notificationService)
                 .environmentObject(languageService)
+                .environmentObject(themeManager)
                 .onAppear {
                     setupNotifications()
                     lockOrientation()

@@ -17,6 +17,7 @@ class GroupService: ObservableObject {
     
     private let db = Firestore.firestore()
     private var groupListener: ListenerRegistration?
+    private var membersListener: ListenerRegistration?
     private var allGroupsListener: ListenerRegistration?
     
     init() {
@@ -26,6 +27,7 @@ class GroupService: ObservableObject {
     
     deinit {
         groupListener?.remove()
+        membersListener?.remove()
         allGroupsListener?.remove()
     }
     
@@ -42,74 +44,6 @@ class GroupService: ObservableObject {
         }
     }
     
-    // MARK: - Firebase Structure Migration
-    func migrateGroupToSubcollectionStructure(groupId: String) async {
-        print("🔄 Starting migration of group \(groupId) to subcollection structure")
-        
-        do {
-            let groupDoc = try await db.collection("groups").document(groupId).getDocument()
-            guard let data = groupDoc.data() else {
-                print("❌ Group document not found")
-                return
-            }
-            
-            // Check if members data exists in main document
-            if let membersArray = data["members"] as? [[String: Any]] {
-                print("📦 Found \(membersArray.count) members to migrate")
-                
-                // Migrate each member to subcollection
-                for memberData in membersArray {
-                    guard let userId = memberData["userId"] as? String,
-                          let displayName = memberData["displayName"] as? String,
-                          let roleString = memberData["role"] as? String else {
-                        continue
-                    }
-                    
-                    // Set nickname = displayName as default
-                    let nickname = memberData["nickname"] as? String ?? displayName
-                    let avatarEmoji = memberData["avatarEmoji"] as? String
-                    let joinedAt = memberData["joinedAt"] as? Timestamp ?? Timestamp(date: Date())
-                    
-                    var userData: [String: Any] = [
-                        "displayName": displayName,
-                        "nickname": nickname,
-                        "role": roleString,
-                        "joinedAt": joinedAt
-                    ]
-                    
-                    // Add optional fields
-                    if let avatarEmoji = avatarEmoji {
-                        userData["avatarEmoji"] = avatarEmoji
-                    }
-                    if let location = memberData["location"] as? [String: Any] {
-                        userData["location"] = location
-                    }
-                    if let lastLocationUpdate = memberData["lastLocationUpdate"] as? Timestamp {
-                        userData["lastLocationUpdate"] = lastLocationUpdate
-                    }
-                    
-                    // Write to subcollection
-                    try await db.collection("groups").document(groupId)
-                        .collection("users").document(userId).setData(userData)
-                    
-                    print("✅ Migrated user \(displayName) to subcollection")
-                }
-                
-                // Remove members array from main document
-                try await db.collection("groups").document(groupId).updateData([
-                    "members": FieldValue.delete()
-                ])
-                
-                print("🗑️ Removed members array from main document")
-                print("✅ Migration completed for group \(groupId)")
-            } else {
-                print("ℹ️ Group \(groupId) already uses subcollection structure")
-            }
-            
-        } catch {
-            print("❌ Migration failed for group \(groupId): \(error.localizedDescription)")
-        }
-    }
     
     func createGroup(name: String, leaderId: String, leaderName: String) async {
         isLoading = true
@@ -118,19 +52,20 @@ class GroupService: ObservableObject {
         let group = HitherGroup(name: name, leaderId: leaderId, leaderName: leaderName)
         
         do {
-            // Create the group document with basic info only (no leaderId, no duplicate id)
+            // Create the group document with basic info only
             try await db.collection("groups").document(group.id).setData([
                 "name": group.name,
+                "leaderId": group.leaderId,
                 "createdAt": Timestamp(date: group.createdAt),
                 "inviteCode": group.inviteCode,
                 "inviteExpiresAt": Timestamp(date: group.inviteExpiresAt),
                 "isActive": group.isActive
             ])
             
-            // Add users to the subcollection with location data
+            // Add leader to the subcollection with location data
             for member in group.members {
                 try await db.collection("groups").document(group.id)
-                    .collection("users").document(member.userId).setData([
+                    .collection("members").document(member.userId).setData([
                         "displayName": member.displayName,
                         "nickname": member.displayName, // Set nickname = displayName by default
                         "role": member.role.rawValue,
@@ -190,8 +125,8 @@ class GroupService: ObservableObject {
                 return
             }
             
-            // Check if user is already in the group's users subcollection
-            let existingUserDoc = try await document.reference.collection("users").document(userId).getDocument()
+            // Check if user is already in the group's members subcollection
+            let existingUserDoc = try await document.reference.collection("members").document(userId).getDocument()
             if existingUserDoc.exists {
                 errorMessage = "You are already a member of this group"
                 print("❌ User already in group")
@@ -203,8 +138,8 @@ class GroupService: ObservableObject {
             
             print("🔍 Creating new member: \(newMember.displayName)")
             
-            // Add the new member to users subcollection
-            try await document.reference.collection("users").document(userId).setData([
+            // Add the new member to members subcollection
+            try await document.reference.collection("members").document(userId).setData([
                 "displayName": newMember.displayName,
                 "nickname": newMember.displayName, // Set nickname = displayName by default
                 "role": newMember.role.rawValue,
@@ -216,7 +151,7 @@ class GroupService: ObservableObject {
                 ]
             ])
             
-            print("🔍 Added member to users subcollection: \(userId)")
+            print("🔍 Added member to members subcollection: \(userId)")
             
             print("✅ Successfully added member to group")
             
@@ -248,56 +183,40 @@ class GroupService: ObservableObject {
             }
             
             print("🔍 Removing member: \(member.displayName) from group: \(group.name)")
-            print("🔍 Current member count: \(group.members.count)")
             
-            // Remove the member from the group
-            try await db.collection("groups").document(group.id).updateData([
-                "members": FieldValue.arrayRemove([[
-                    "id": member.id,
-                    "userId": member.userId,
-                    "displayName": member.displayName,
-                    "role": member.role.rawValue,
-                    "joinedAt": Timestamp(date: member.joinedAt)
-                ]])
-            ])
+            // Remove the member from the subcollection
+            try await db.collection("groups").document(group.id)
+                .collection("members").document(userId).delete()
             
-            let remainingMembers = group.members.filter { $0.userId != userId }
-            print("🔍 Remaining members count: \(remainingMembers.count)")
+            // Check remaining members count
+            let remainingMembersSnapshot = try await db.collection("groups").document(group.id)
+                .collection("members").getDocuments()
             
-            if remainingMembers.isEmpty {
+            print("🔍 Remaining members count: \(remainingMembersSnapshot.documents.count)")
+            
+            if remainingMembersSnapshot.documents.isEmpty {
                 // If this was the last member, delete the group
                 print("🔍 Last member leaving, deleting group")
                 try await db.collection("groups").document(group.id).delete()
                 print("✅ Group deleted successfully")
             } else if member.role == .leader {
                 // If the leader is leaving, promote the first follower to leader
-                if let newLeader = remainingMembers.first {
-                    print("🔍 Promoting \(newLeader.displayName) to leader")
+                if let firstMemberDoc = remainingMembersSnapshot.documents.first {
+                    let newLeaderId = firstMemberDoc.documentID
+                    print("🔍 Promoting \(newLeaderId) to leader")
                     
-                    // Remove the old member record
+                    // Update the member's role to leader in subcollection
+                    try await db.collection("groups").document(group.id)
+                        .collection("members").document(newLeaderId).updateData([
+                            "role": MemberRole.leader.rawValue
+                        ])
+                    
+                    // Update the group's leaderId
                     try await db.collection("groups").document(group.id).updateData([
-                        "members": FieldValue.arrayRemove([[
-                            "id": newLeader.id,
-                            "userId": newLeader.userId,
-                            "displayName": newLeader.displayName,
-                            "role": newLeader.role.rawValue,
-                            "joinedAt": Timestamp(date: newLeader.joinedAt)
-                        ]])
+                        "leaderId": newLeaderId
                     ])
                     
-                    // Add the new leader record
-                    try await db.collection("groups").document(group.id).updateData([
-                        "leaderId": newLeader.userId,
-                        "members": FieldValue.arrayUnion([[
-                            "id": newLeader.id,
-                            "userId": newLeader.userId,
-                            "displayName": newLeader.displayName,
-                            "role": MemberRole.leader.rawValue,
-                            "joinedAt": Timestamp(date: newLeader.joinedAt)
-                        ]])
-                    ])
-                    
-                    print("✅ Successfully promoted \(newLeader.displayName) to leader")
+                    print("✅ Successfully promoted \(newLeaderId) to leader")
                 }
             }
             
@@ -312,11 +231,7 @@ class GroupService: ObservableObject {
     }
     
     private func startListeningToGroup(groupId: String) {
-        // Run migration first to ensure subcollection structure
-        Task {
-            await migrateGroupToSubcollectionStructure(groupId: groupId)
-        }
-        
+        // Listen to group basic info
         groupListener = db.collection("groups").document(groupId)
             .addSnapshotListener { [weak self] documentSnapshot, error in
                 Task { @MainActor in
@@ -332,8 +247,27 @@ class GroupService: ObservableObject {
                         return
                     }
                     
-                    // Parse group data and load users from subcollection
+                    // Parse group data and load members from subcollection
                     await self?.parseGroupFromDataWithSubcollections(groupId: groupId, data: data)
+                }
+            }
+        
+        // Listen to members subcollection for real-time updates
+        membersListener = db.collection("groups").document(groupId)
+            .collection("members").addSnapshotListener { [weak self] querySnapshot, error in
+                Task { @MainActor in
+                    if let error = error {
+                        print("❌ Failed to sync members: \(error.localizedDescription)")
+                        return
+                    }
+                    
+                    // Reload group data when members change
+                    if let group = self?.currentGroup {
+                        let groupDoc = try? await self?.db.collection("groups").document(groupId).getDocument()
+                        if let data = groupDoc?.data() {
+                            await self?.parseGroupFromDataWithSubcollections(groupId: groupId, data: data)
+                        }
+                    }
                 }
             }
     }
@@ -341,6 +275,8 @@ class GroupService: ObservableObject {
     private func stopListeningToGroup() {
         groupListener?.remove()
         groupListener = nil
+        membersListener?.remove()
+        membersListener = nil
     }
     
     private func parseGroupFromDataWithSubcollections(groupId: String, data: [String: Any]) async {
@@ -368,45 +304,41 @@ class GroupService: ObservableObject {
         
         let isActive = data["isActive"] as? Bool ?? true
         
-        // Load users from subcollection to determine leader
+        // Load members from subcollection to determine leader
         do {
-            let usersSnapshot = try await db.collection("groups").document(groupId)
-                .collection("users").getDocuments()
+            let membersSnapshot = try await db.collection("groups").document(groupId)
+                .collection("members").getDocuments()
             
             var members: [GroupMember] = []
-            var leaderId: String? = nil
+            let leaderId: String? = data["leaderId"] as? String
             
-            for userDoc in usersSnapshot.documents {
-                let userId = userDoc.documentID
-                let userData = userDoc.data()
+            for memberDoc in membersSnapshot.documents {
+                let userId = memberDoc.documentID
+                let memberData = memberDoc.data()
                 
-                guard let displayName = userData["displayName"] as? String,
-                      let roleString = userData["role"] as? String,
+                guard let displayName = memberData["displayName"] as? String,
+                      let roleString = memberData["role"] as? String,
                       let role = MemberRole(rawValue: roleString),
-                      let joinedAtTimestamp = userData["joinedAt"] as? Timestamp else {
+                      let joinedAtTimestamp = memberData["joinedAt"] as? Timestamp else {
                     continue
-                }
-                
-                if role == .leader {
-                    leaderId = userId
                 }
                 
                 var location: GeoPoint? = nil
                 var lastLocationUpdate: Date? = nil
                 
-                if let locationData = userData["location"] as? [String: Any],
+                if let locationData = memberData["location"] as? [String: Any],
                    let lat = locationData["latitude"] as? Double,
                    let lng = locationData["longitude"] as? Double {
                     location = GeoPoint(latitude: lat, longitude: lng)
                 }
                 
-                if let lastUpdateTimestamp = userData["lastLocationUpdate"] as? Timestamp {
+                if let lastUpdateTimestamp = memberData["lastLocationUpdate"] as? Timestamp {
                     lastLocationUpdate = lastUpdateTimestamp.dateValue()
                 }
                 
                 // Parse nickname and avatarEmoji from Firebase data
-                let nickname = userData["nickname"] as? String
-                let avatarEmoji = userData["avatarEmoji"] as? String
+                let nickname = memberData["nickname"] as? String
+                let avatarEmoji = memberData["avatarEmoji"] as? String
                 
                 let member = GroupMember(
                     id: UUID().uuidString,
@@ -424,7 +356,7 @@ class GroupService: ObservableObject {
             }
             
             guard let validLeaderId = leaderId else {
-                print("❌ No leader found in users subcollection")
+                print("❌ No leader found in members subcollection")
                 return
             }
             
@@ -467,11 +399,6 @@ class GroupService: ObservableObject {
         }
     }
     
-    private func parseGroupFromData(_ data: [String: Any]) {
-        // Legacy method - now redirected to subcollection approach
-        print("🔍 parseGroupFromData called - this method is deprecated")
-        print("⚠️ Please use parseGroupFromDataWithSubcollections instead")
-    }
     
     func generateNewInviteCode() async {
         guard let group = currentGroup else { return }
@@ -494,68 +421,6 @@ class GroupService: ObservableObject {
         isLoading = false
     }
     
-    func cleanupGroupData(groupId: String) async {
-        print("🧹 Starting cleanup for group: \(groupId)")
-        
-        do {
-            let document = try await db.collection("groups").document(groupId).getDocument()
-            guard let data = document.data(),
-                  let leaderId = data["leaderId"] as? String,
-                  let membersData = data["members"] as? [[String: Any]] else {
-                print("❌ Failed to fetch group data for cleanup")
-                return
-            }
-            
-            // Clean up duplicate members and ensure leader exists
-            var cleanedMembers: [[String: Any]] = []
-            var seenUserIds: Set<String> = []
-            var hasLeader = false
-            
-            for memberData in membersData {
-                guard let userId = memberData["userId"] as? String else { continue }
-                
-                if seenUserIds.contains(userId) {
-                    print("🧹 Removing duplicate member: \(userId)")
-                    continue
-                }
-                
-                seenUserIds.insert(userId)
-                
-                // Fix role if needed
-                var cleanedMemberData = memberData
-                let correctRole = (userId == leaderId) ? "leader" : "follower"
-                if let currentRole = memberData["role"] as? String, currentRole != correctRole {
-                    print("🧹 Fixing role for \(userId): \(currentRole) -> \(correctRole)")
-                    cleanedMemberData["role"] = correctRole
-                }
-                
-                if correctRole == "leader" {
-                    hasLeader = true
-                }
-                
-                cleanedMembers.append(cleanedMemberData)
-            }
-            
-            // If leader is missing from members, log it but don't fail
-            if !hasLeader {
-                print("⚠️ Leader \(leaderId) not found in members list. This might be expected during member operations.")
-            }
-            
-            // Update the group with cleaned data
-            if cleanedMembers.count != membersData.count {
-                print("🧹 Updating group with cleaned data: \(membersData.count) -> \(cleanedMembers.count) members")
-                try await db.collection("groups").document(groupId).updateData([
-                    "members": cleanedMembers
-                ])
-                print("✅ Group data cleanup completed")
-            } else {
-                print("✅ No cleanup needed")
-            }
-            
-        } catch {
-            print("❌ Failed to cleanup group data: \(error.localizedDescription)")
-        }
-    }
     
     func loadUserGroups(userId: String) async {
         print("🔍 Loading groups for userId: '\(userId)'")
@@ -575,10 +440,10 @@ class GroupService: ObservableObject {
                 
                 print("🔍 Checking group '\(groupName)' (ID: \(groupId))")
                 
-                // Check if user exists in the users subcollection
+                // Check if user exists in the members subcollection
                 do {
                     let userDoc = try await db.collection("groups").document(groupId)
-                        .collection("users").document(userId).getDocument()
+                        .collection("members").document(userId).getDocument()
                     
                     if userDoc.exists {
                         print("✅ Found user in group '\(groupName)'")
@@ -628,10 +493,10 @@ class GroupService: ObservableObject {
                         
                         print("🔍 Listener checking group '\(groupName)' for user '\(userId)'")
                         
-                        // Check if user exists in the users subcollection
+                        // Check if user exists in the members subcollection
                         do {
                             let userDoc = try await self?.db.collection("groups").document(groupId)
-                                .collection("users").document(userId).getDocument()
+                                .collection("members").document(userId).getDocument()
                             
                             if userDoc?.exists == true {
                                 print("✅ Found user in group '\(groupName)'")
@@ -681,11 +546,11 @@ class GroupService: ObservableObject {
     
     func updateMemberNickname(groupId: String, userId: String, nickname: String) async {
         do {
-            let memberPath = "members.\(userId).nickname"
-            
-            try await db.collection("groups").document(groupId).updateData([
-                memberPath: nickname
-            ])
+            // Update the member's nickname in the subcollection
+            try await db.collection("groups").document(groupId)
+                .collection("members").document(userId).updateData([
+                    "nickname": nickname
+                ])
             
             print("✅ Successfully updated nickname to: \(nickname) for user: \(userId)")
             
@@ -729,49 +594,44 @@ class GroupService: ObservableObject {
         errorMessage = nil
         
         do {
-            let document = try await db.collection("groups").document(groupId).getDocument()
-            guard let data = document.data() else {
-                errorMessage = "Group not found"
-                isLoading = false
-                return
-            }
+            // Check if user exists in the group
+            let memberDoc = try await db.collection("groups").document(groupId)
+                .collection("members").document(userId).getDocument()
             
-            guard let membersData = data["members"] as? [[String: Any]] else {
-                errorMessage = "Invalid group data"
-                isLoading = false
-                return
-            }
-            
-            guard let memberData = membersData.first(where: { $0["userId"] as? String == userId }) else {
+            guard memberDoc.exists, let memberData = memberDoc.data() else {
                 errorMessage = "You are not a member of this group"
                 isLoading = false
                 return
             }
             
-            // Remove the member
-            try await db.collection("groups").document(groupId).updateData([
-                "members": FieldValue.arrayRemove([memberData])
-            ])
+            let memberRole = memberData["role"] as? String
             
-            let remainingMembers = membersData.filter { $0["userId"] as? String != userId }
+            // Remove the member from subcollection
+            try await db.collection("groups").document(groupId)
+                .collection("members").document(userId).delete()
             
-            if remainingMembers.isEmpty {
+            // Check remaining members count
+            let remainingMembersSnapshot = try await db.collection("groups").document(groupId)
+                .collection("members").getDocuments()
+            
+            if remainingMembersSnapshot.documents.isEmpty {
                 // Delete the group if no members left
                 try await db.collection("groups").document(groupId).delete()
                 print("✅ Group deleted (no members remaining)")
-            } else if memberData["role"] as? String == "leader" {
+            } else if memberRole == "leader" {
                 // Promote first remaining member to leader
-                if let newLeaderData = remainingMembers.first {
-                    try await db.collection("groups").document(groupId).updateData([
-                        "members": FieldValue.arrayRemove([newLeaderData])
-                    ])
+                if let firstMemberDoc = remainingMembersSnapshot.documents.first {
+                    let newLeaderId = firstMemberDoc.documentID
                     
-                    var updatedLeaderData = newLeaderData
-                    updatedLeaderData["role"] = "leader"
+                    // Update the member's role to leader in subcollection
+                    try await db.collection("groups").document(groupId)
+                        .collection("members").document(newLeaderId).updateData([
+                            "role": "leader"
+                        ])
                     
+                    // Update the group's leaderId
                     try await db.collection("groups").document(groupId).updateData([
-                        "leaderId": newLeaderData["userId"] as? String ?? "",
-                        "members": FieldValue.arrayUnion([updatedLeaderData])
+                        "leaderId": newLeaderId
                     ])
                     
                     print("✅ Promoted member to leader")
@@ -795,189 +655,6 @@ class GroupService: ObservableObject {
         isLoading = false
     }
     
-    private func validateAndRepairGroupData(_ data: [String: Any]) -> [String: Any] {
-        var repairedData = data
-        
-        print("🔧 Starting data validation and repair...")
-        
-        // Validate and repair members field
-        if let members = data["members"] {
-            if let membersArray = members as? [[String: Any]] {
-                // Check if members array has proper structure
-                let validMembers = membersArray.compactMap { memberData -> [String: Any]? in
-                    // Check if member has required fields
-                    if memberData["id"] != nil && memberData["userId"] != nil && 
-                       memberData["displayName"] != nil && memberData["role"] != nil {
-                        return memberData
-                    }
-                    return nil
-                }
-                
-                if validMembers.count == membersArray.count {
-                    print("✅ Members field validation: Array format with \(membersArray.count) valid members")
-                } else {
-                    print("⚠️ Members field validation: Found \(validMembers.count) valid members out of \(membersArray.count)")
-                    repairedData["members"] = validMembers
-                }
-            } else if let singleMember = members as? [String: Any] {
-                // Check if single member has proper structure
-                if singleMember["id"] != nil && singleMember["userId"] != nil && 
-                   singleMember["displayName"] != nil && singleMember["role"] != nil {
-                    repairedData["members"] = [singleMember]
-                    print("✅ Members field validation: Converted valid single member to array")
-                } else {
-                    // Single member is invalid, check if it's the legacy format
-                    print("⚠️ Members field validation: Single member missing required fields")
-                    print("  - Member data: \(singleMember)")
-                    repairedData["members"] = repairLegacyMemberData(singleMember, groupData: data)
-                }
-            } else {
-                // Try to repair legacy format where members is a dictionary with userIds as keys
-                print("⚠️ Members field validation: Attempting to repair legacy format")
-                print("  - Members field type: \(type(of: members))")
-                print("  - Members field value: \(members)")
-                
-                if let legacyMembers = members as? [String: Any] {
-                    repairedData["members"] = repairLegacyMemberData(legacyMembers, groupData: data)
-                } else {
-                    repairedData["members"] = [[String: Any]]()
-                    print("⚠️ Members field validation: Cannot repair, creating empty array")
-                }
-            }
-        } else {
-            // Missing members field, create empty array
-            repairedData["members"] = [[String: Any]]()
-            print("⚠️ Members field validation: Missing field, creating empty array")
-        }
-        
-        // Validate other required fields
-        if repairedData["isActive"] == nil {
-            repairedData["isActive"] = true
-            print("⚠️ isActive field validation: Missing field, defaulting to true")
-        }
-        
-        // Ensure leaderId is set correctly
-        if let membersArray = repairedData["members"] as? [[String: Any]], !membersArray.isEmpty {
-            let hasLeader = membersArray.contains { member in
-                member["role"] as? String == "leader"
-            }
-            
-            if !hasLeader {
-                // If no leader in members, check if leaderId is set correctly
-                if let leaderId = repairedData["leaderId"] as? String {
-                    // Find member with leaderId and ensure they are leader
-                    var updatedMembers = membersArray
-                    for (index, member) in updatedMembers.enumerated() {
-                        if let userId = member["userId"] as? String, userId == leaderId {
-                            updatedMembers[index]["role"] = "leader"
-                            print("🔧 Fixed leader role for userId: \(userId)")
-                            break
-                        }
-                    }
-                    repairedData["members"] = updatedMembers
-                } else {
-                    // No leaderId set, use first member as leader
-                    if let firstUserId = membersArray.first?["userId"] as? String {
-                        repairedData["leaderId"] = firstUserId
-                        var updatedMembers = membersArray
-                        updatedMembers[0]["role"] = "leader"
-                        repairedData["members"] = updatedMembers
-                        print("🔧 Set first member as leader: \(firstUserId)")
-                    }
-                }
-            }
-        }
-        
-        print("✅ Data validation and repair completed")
-        return repairedData
-    }
-    
-    private func repairLegacyMemberData(_ legacyData: [String: Any], groupData: [String: Any]) -> [[String: Any]] {
-        var repairedMembers: [[String: Any]] = []
-        
-        print("🔧 Attempting to repair legacy member data...")
-        
-        for (userId, memberInfo) in legacyData {
-            print("  - Processing userId: \(userId)")
-            
-            // Create a proper member object
-            var memberData: [String: Any] = [
-                "id": UUID().uuidString,
-                "userId": userId,
-                "displayName": "Unknown User", // Default name
-                "role": "follower", // Default role
-                "joinedAt": Timestamp(date: Date())
-            ]
-            
-            // If memberInfo is a dictionary, extract location data
-            if let memberInfoDict = memberInfo as? [String: Any] {
-                if let location = memberInfoDict["location"] as? [String: Any] {
-                    memberData["location"] = location
-                    print("    - Added location data")
-                }
-                
-                if let lastLocationUpdate = memberInfoDict["lastLocationUpdate"] as? Timestamp {
-                    memberData["lastLocationUpdate"] = lastLocationUpdate
-                    print("    - Added last location update")
-                }
-                
-                // Extract nickname field (this is the user's display name in the new structure)
-                if let nickname = memberInfoDict["nickname"] as? String {
-                    memberData["displayName"] = nickname
-                    memberData["nickname"] = nickname
-                    print("    - Found nickname: \(nickname)")
-                } else if let displayName = memberInfoDict["displayName"] as? String {
-                    // Legacy format fallback
-                    memberData["displayName"] = displayName
-                    memberData["nickname"] = displayName
-                    print("    - Found legacy displayName: \(displayName)")
-                }
-                
-                if let role = memberInfoDict["role"] as? String {
-                    memberData["role"] = role
-                    print("    - Found role: \(role)")
-                }
-            }
-            
-            // Check if this user is the leader
-            if let leaderId = groupData["leaderId"] as? String, userId == leaderId {
-                memberData["role"] = "leader"
-                print("    - Set as leader based on leaderId: \(leaderId)")
-            } else {
-                // If no explicit leader found and this is the only/first member, make them leader
-                if repairedMembers.isEmpty {
-                    memberData["role"] = "leader"
-                    print("    - Set as leader (first member in group)")
-                }
-            }
-            
-            repairedMembers.append(memberData)
-            print("    - ✅ Repaired member: \(memberData["displayName"] ?? "Unknown")")
-        }
-        
-        // Ensure at least one leader exists
-        let hasLeader = repairedMembers.contains { member in
-            member["role"] as? String == "leader"
-        }
-        
-        if !hasLeader && !repairedMembers.isEmpty {
-            // If no leader found, make the first member a leader
-            repairedMembers[0]["role"] = "leader"
-            print("🔧 No leader found, promoted first member to leader")
-        }
-        
-        print("✅ Legacy member data repair completed: \(repairedMembers.count) members")
-        print("🔧 Leaders in repaired data: \(repairedMembers.filter { $0["role"] as? String == "leader" }.count)")
-        return repairedMembers
-    }
-    
-    private func parseGroupFromDocument(_ data: [String: Any]) -> HitherGroup? {
-        // This method is now deprecated - it cannot work with the new structure
-        // because it doesn't have access to the users subcollection
-        print("❌ parseGroupFromDocument called - this method is deprecated")
-        print("⚠️ Cannot parse group without access to users subcollection")
-        return nil
-    }
     
     private func parseGroupWithSubcollections(groupId: String, groupData: [String: Any]) async -> HitherGroup? {
         guard let name = groupData["name"] as? String,
@@ -990,22 +667,22 @@ class GroupService: ObservableObject {
         
         let isActive = groupData["isActive"] as? Bool ?? true
         
-        // Load users from subcollection
+        // Load members from subcollection  
         do {
-            let usersSnapshot = try await db.collection("groups").document(groupId)
-                .collection("users").getDocuments()
+            let membersSnapshot = try await db.collection("groups").document(groupId)
+                .collection("members").getDocuments()
             
             var members: [GroupMember] = []
             var leaderId: String? = nil
             
-            for userDoc in usersSnapshot.documents {
-                let userId = userDoc.documentID
-                let userData = userDoc.data()
+            for memberDoc in membersSnapshot.documents {
+                let userId = memberDoc.documentID
+                let memberData = memberDoc.data()
                 
-                guard let displayName = userData["displayName"] as? String,
-                      let roleString = userData["role"] as? String,
+                guard let displayName = memberData["displayName"] as? String,
+                      let roleString = memberData["role"] as? String,
                       let role = MemberRole(rawValue: roleString),
-                      let joinedAtTimestamp = userData["joinedAt"] as? Timestamp else {
+                      let joinedAtTimestamp = memberData["joinedAt"] as? Timestamp else {
                     continue
                 }
                 
@@ -1016,19 +693,19 @@ class GroupService: ObservableObject {
                 var location: GeoPoint? = nil
                 var lastLocationUpdate: Date? = nil
                 
-                if let locationData = userData["location"] as? [String: Any],
+                if let locationData = memberData["location"] as? [String: Any],
                    let lat = locationData["latitude"] as? Double,
                    let lng = locationData["longitude"] as? Double {
                     location = GeoPoint(latitude: lat, longitude: lng)
                 }
                 
-                if let lastUpdateTimestamp = userData["lastLocationUpdate"] as? Timestamp {
+                if let lastUpdateTimestamp = memberData["lastLocationUpdate"] as? Timestamp {
                     lastLocationUpdate = lastUpdateTimestamp.dateValue()
                 }
                 
                 // Parse nickname and avatarEmoji from Firebase data
-                let nickname = userData["nickname"] as? String
-                let avatarEmoji = userData["avatarEmoji"] as? String
+                let nickname = memberData["nickname"] as? String
+                let avatarEmoji = memberData["avatarEmoji"] as? String
                 
                 let member = GroupMember(
                     id: UUID().uuidString,
@@ -1046,11 +723,32 @@ class GroupService: ObservableObject {
             }
             
             guard let validLeaderId = leaderId else {
-                print("❌ No leader found in users subcollection for group: \(groupId)")
+                print("❌ No leader found in members subcollection for group: \(groupId)")
                 return nil
             }
             
             let leaderName = members.first(where: { $0.role == .leader })?.displayName ?? "Unknown Leader"
+            
+            // Load group settings from subcollection
+            var groupSettings = GroupSettings()
+            do {
+                let settingsDoc = try await db.collection("groups").document(groupId)
+                    .collection("settings").document("general").getDocument()
+                
+                if settingsDoc.exists, let settingsData = settingsDoc.data() {
+                    let freeRoamMode = settingsData["freeRoamMode"] as? Bool ?? false
+                    let freeRoamEnabledBy = settingsData["freeRoamEnabledBy"] as? String
+                    let freeRoamEnabledAt = (settingsData["freeRoamEnabledAt"] as? Timestamp)?.dateValue()
+                    
+                    groupSettings = GroupSettings(
+                        freeRoamMode: freeRoamMode,
+                        freeRoamEnabledBy: freeRoamEnabledBy,
+                        freeRoamEnabledAt: freeRoamEnabledAt
+                    )
+                }
+            } catch {
+                print("⚠️ Failed to load group settings, using defaults: \(error)")
+            }
             
             return HitherGroup(
                 id: groupId,
@@ -1061,52 +759,16 @@ class GroupService: ObservableObject {
                 inviteCode: inviteCode,
                 inviteExpiresAt: inviteExpiresAtTimestamp.dateValue(),
                 members: members,
-                isActive: isActive
+                isActive: isActive,
+                settings: groupSettings
             )
             
         } catch {
-            print("❌ Failed to load users subcollection for group \(groupId): \(error)")
+            print("❌ Failed to load members subcollection for group \(groupId): \(error)")
             return nil
         }
     }
     
-    private func updateFirebaseWithRepairedData(groupId: String, repairedGroup: HitherGroup) async {
-        print("🔧 Updating Firebase with repaired group data...")
-        
-        do {
-            let membersData = repairedGroup.members.map { member in
-                var memberDict: [String: Any] = [
-                    "id": member.id,
-                    "userId": member.userId,
-                    "displayName": member.displayName,
-                    "nickname": member.nickname ?? member.displayName,
-                    "role": member.role.rawValue,
-                    "joinedAt": Timestamp(date: member.joinedAt)
-                ]
-                
-                if let location = member.location {
-                    memberDict["location"] = [
-                        "latitude": location.latitude,
-                        "longitude": location.longitude
-                    ]
-                }
-                
-                if let lastLocationUpdate = member.lastLocationUpdate {
-                    memberDict["lastLocationUpdate"] = Timestamp(date: lastLocationUpdate)
-                }
-                
-                return memberDict
-            }
-            
-            try await db.collection("groups").document(groupId).updateData([
-                "members": membersData
-            ])
-            
-            print("✅ Successfully updated Firebase with repaired data")
-        } catch {
-            print("❌ Failed to update Firebase with repaired data: \(error.localizedDescription)")
-        }
-    }
     
     // Diagnostic function to check group data structure
     func diagnoseGroupData(groupId: String) async {
@@ -1121,27 +783,116 @@ class GroupService: ObservableObject {
             
             print("🔍 Group document exists with keys: \(data.keys.sorted())")
             
-            if let members = data["members"] {
-                print("🔍 Members field type: \(type(of: members))")
-                print("🔍 Members field content: \(members)")
+            // Check members subcollection
+            let membersSnapshot = try await db.collection("groups").document(groupId)
+                .collection("members").getDocuments()
                 
-                if let membersArray = members as? [[String: Any]] {
-                    print("🔍 Members is array with \(membersArray.count) elements")
-                    for (index, member) in membersArray.enumerated() {
-                        print("🔍 Member \(index + 1) keys: \(member.keys.sorted())")
-                    }
-                } else if let membersDict = members as? [String: Any] {
-                    print("🔍 Members is dictionary with keys: \(membersDict.keys.sorted())")
-                    for (key, value) in membersDict {
-                        print("🔍 Members[\(key)] type: \(type(of: value))")
-                        print("🔍 Members[\(key)] content: \(value)")
-                    }
-                }
-            } else {
-                print("❌ Members field is missing")
+            print("🔍 Members subcollection has \(membersSnapshot.documents.count) documents")
+            for memberDoc in membersSnapshot.documents {
+                let memberData = memberDoc.data()
+                print("🔍 Member \(memberDoc.documentID) keys: \(memberData.keys.sorted())")
             }
         } catch {
             print("❌ Failed to diagnose group data: \(error.localizedDescription)")
+        }
+    }
+    
+    // MARK: - Member Status Management
+    func updateMemberStatus(userId: String, status: MemberStatus) async {
+        guard let group = currentGroup else {
+            print("❌ No current group to update member status")
+            return
+        }
+        
+        do {
+            // Update local state first for immediate UI response
+            if let memberIndex = currentGroup?.members.firstIndex(where: { $0.userId == userId }) {
+                currentGroup?.members[memberIndex].status = status
+            }
+            
+            let groupRef = db.collection("groups").document(group.id)
+            let memberRef = groupRef.collection("members").document(userId)
+            
+            try await memberRef.updateData([
+                "status": status.rawValue,
+                "lastStatusUpdate": Timestamp()
+            ])
+            
+            print("✅ Successfully updated member status to \(status.rawValue)")
+        } catch {
+            print("❌ Failed to update member status: \(error.localizedDescription)")
+            errorMessage = "Failed to update status: \(error.localizedDescription)"
+        }
+    }
+    
+    func updateCurrentUserStatus(_ status: MemberStatus, authService: AuthenticationService) async {
+        guard let currentUser = authService.currentUser else {
+            print("❌ No current user to update status")
+            return
+        }
+        
+        await updateMemberStatus(userId: currentUser.id, status: status)
+    }
+    
+    // MARK: - Free Roam Mode Management
+    func updateFreeRoamMode(groupId: String, enabled: Bool, enabledBy: String) async {
+        do {
+            let settingsRef = db.collection("groups").document(groupId)
+                .collection("settings").document("general")
+            
+            let settingsData: [String: Any] = [
+                "freeRoamMode": enabled,
+                "freeRoamEnabledBy": enabledBy,
+                "freeRoamEnabledAt": Timestamp()
+            ]
+            
+            try await settingsRef.setData(settingsData, merge: true)
+            
+            // Update local state
+            currentGroup?.settings.freeRoamMode = enabled
+            currentGroup?.settings.freeRoamEnabledBy = enabledBy
+            currentGroup?.settings.freeRoamEnabledAt = Date()
+            
+            print("✅ Successfully updated free roam mode to \(enabled)")
+            
+            // Send notification to all group members about the mode change
+            await notifyGroupMembersOfModeChange(groupId: groupId, enabled: enabled, enabledBy: enabledBy)
+            
+        } catch {
+            print("❌ Failed to update free roam mode: \(error.localizedDescription)")
+            errorMessage = "Failed to update free roam mode: \(error.localizedDescription)"
+        }
+    }
+    
+    private func notifyGroupMembersOfModeChange(groupId: String, enabled: Bool, enabledBy: String) async {
+        guard let group = currentGroup else { return }
+        
+        let notificationService = NotificationService()
+        let title = enabled ? "Free Roam Mode Enabled" : "Free Roam Mode Disabled"
+        let body = enabled ? 
+            "All find requests will now be automatically approved" : 
+            "Find requests will require approval again"
+        
+        // Send to all group members except the one who made the change
+        for member in group.members where member.userId != enabledBy {
+            // Create a simple local notification for mode changes
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = body
+            content.sound = .default
+            content.userInfo = [
+                "type": "free_roam_mode_changed",
+                "groupId": groupId,
+                "enabled": enabled ? "true" : "false"
+            ]
+            
+            let request = UNNotificationRequest(
+                identifier: "free_roam_\(groupId)_\(Date().timeIntervalSince1970)",
+                content: content,
+                trigger: UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
+            )
+            
+            try? await UNUserNotificationCenter.current().add(request)
         }
     }
 }
